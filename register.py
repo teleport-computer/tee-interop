@@ -4,12 +4,18 @@
 import argparse, json, requests
 from web3 import Web3
 from eth_account import Account
+from eth_abi import encode
 
 BRIDGE_ABI = json.loads("""[
-  {"inputs":[{"name":"codeId","type":"bytes32"},{"components":[{"name":"messageHash","type":"bytes32"},{"name":"messageSignature","type":"bytes"},{"name":"appSignature","type":"bytes"},{"name":"kmsSignature","type":"bytes"},{"name":"derivedCompressedPubkey","type":"bytes"},{"name":"appCompressedPubkey","type":"bytes"},{"name":"purpose","type":"string"}],"name":"dstackProof","type":"tuple"}],"name":"registerDstack","outputs":[{"name":"","type":"bytes32"}],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[{"name":"verifier","type":"address"},{"name":"proof","type":"bytes"}],"name":"register","outputs":[{"name":"","type":"bytes32"}],"stateMutability":"nonpayable","type":"function"},
   {"inputs":[{"name":"memberId","type":"bytes32"}],"name":"isMember","outputs":[{"name":"","type":"bool"}],"stateMutability":"view","type":"function"},
   {"inputs":[{"name":"codeId","type":"bytes32"}],"name":"allowedCode","outputs":[{"name":"","type":"bool"}],"stateMutability":"view","type":"function"},
   {"inputs":[{"name":"codeId","type":"bytes32"}],"name":"addAllowedCode","outputs":[],"stateMutability":"nonpayable","type":"function"},
+  {"inputs":[{"name":"verifier","type":"address"}],"name":"allowedVerifiers","outputs":[{"name":"","type":"bool"}],"stateMutability":"view","type":"function"},
+  {"inputs":[{"name":"verifier","type":"address"}],"name":"addVerifier","outputs":[],"stateMutability":"nonpayable","type":"function"}
+]""")
+
+DSTACK_VERIFIER_ABI = json.loads("""[
   {"inputs":[{"name":"root","type":"address"}],"name":"allowedKmsRoots","outputs":[{"name":"","type":"bool"}],"stateMutability":"view","type":"function"},
   {"inputs":[{"name":"root","type":"address"}],"name":"addKmsRoot","outputs":[],"stateMutability":"nonpayable","type":"function"}
 ]""")
@@ -19,6 +25,7 @@ group = parser.add_mutually_exclusive_group(required=True)
 group.add_argument('--cvm-url', help='CVM base URL (e.g. http://host:port)')
 group.add_argument('--proof-json', help='Proof JSON string (from serial logs PROOF_JSON=...)')
 parser.add_argument('--bridge', required=True, help='TEEBridge contract address')
+parser.add_argument('--verifier', required=True, help='DstackVerifier contract address')
 parser.add_argument('--private-key', required=True, help='Deployer private key')
 parser.add_argument('--rpc-url', default='https://mainnet.base.org')
 args = parser.parse_args()
@@ -32,7 +39,7 @@ p = proof_data['dstack_proof']
 code_id = bytes.fromhex(proof_data['code_id'].replace('0x', ''))
 kms_root = proof_data['kms_root']
 
-dstack_proof = (
+dstack_proof_tuple = (
     bytes.fromhex(p['message_hash'][2:]),
     bytes.fromhex(p['message_signature'][2:]),
     bytes.fromhex(p['app_signature'][2:]),
@@ -40,6 +47,12 @@ dstack_proof = (
     bytes.fromhex(p['derived_compressed_pubkey'][2:]),
     bytes.fromhex(p['app_compressed_pubkey'][2:]),
     p['purpose'],
+)
+
+# Encode proof as abi.encode(bytes32 codeId, DstackProof)
+encoded_proof = encode(
+    ['bytes32', '(bytes32,bytes,bytes,bytes,bytes,bytes,string)'],
+    [code_id, dstack_proof_tuple],
 )
 
 member_id = Web3.solidity_keccak(["bytes"], [bytes.fromhex(p['derived_compressed_pubkey'][2:])])
@@ -50,6 +63,7 @@ print(f"KMS root: {kms_root}")
 w3 = Web3(Web3.HTTPProvider(args.rpc_url))
 deployer = Account.from_key(args.private_key)
 bridge = w3.eth.contract(address=Web3.to_checksum_address(args.bridge), abi=BRIDGE_ABI)
+verifier = w3.eth.contract(address=Web3.to_checksum_address(args.verifier), abi=DSTACK_VERIFIER_ABI)
 
 def send_tx(fn):
     tx = fn.build_transaction({
@@ -63,22 +77,22 @@ def send_tx(fn):
     assert receipt['status'] == 1, f"Tx reverted: {tx_hash.hex()}"
     return tx_hash
 
-# Check KMS root
-if not bridge.functions.allowedKmsRoots(Web3.to_checksum_address(kms_root)).call():
-    print(f"Adding KMS root {kms_root} ...")
-    tx_hash = send_tx(bridge.functions.addKmsRoot(Web3.to_checksum_address(kms_root)))
+# Check KMS root on the DstackVerifier
+if not verifier.functions.allowedKmsRoots(Web3.to_checksum_address(kms_root)).call():
+    print(f"Adding KMS root {kms_root} to DstackVerifier ...")
+    tx_hash = send_tx(verifier.functions.addKmsRoot(Web3.to_checksum_address(kms_root)))
     print(f"  tx: {tx_hash.hex()}")
 
-# Check code allowlist
+# Check code allowlist on TEEBridge
 if not bridge.functions.allowedCode(code_id).call():
     print(f"Adding allowed code {proof_data['code_id']} ...")
     tx_hash = send_tx(bridge.functions.addAllowedCode(code_id))
     print(f"  tx: {tx_hash.hex()}")
 
-# Register
+# Register via TEEBridge.register(verifier, proof)
 if bridge.functions.isMember(member_id).call():
     print("Already registered!")
 else:
     print("Registering ...")
-    tx_hash = send_tx(bridge.functions.registerDstack(code_id, dstack_proof))
+    tx_hash = send_tx(bridge.functions.register(Web3.to_checksum_address(args.verifier), encoded_proof))
     print(f"Registered! tx: {tx_hash.hex()}")

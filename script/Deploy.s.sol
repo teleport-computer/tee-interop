@@ -3,16 +3,25 @@ pragma solidity ^0.8.21;
 
 import {Script} from "forge-std/Script.sol";
 import {TEEBridge} from "../contracts/TEEBridge.sol";
+import {DstackVerifier} from "../contracts/DstackVerifier.sol";
+import {SigstoreAdapter} from "../contracts/SigstoreAdapter.sol";
 
 contract Deploy is Script {
     function run() external {
-        // Pass KMS root addresses as constructor args
-        // Example: forge script script/Deploy.s.sol --broadcast --rpc-url $RPC_URL
-        // Set KMS_ROOTS env as comma-separated addresses
         address[] memory kmsRoots = _parseKmsRoots();
+        address sigstoreVerifier = vm.envOr("SIGSTORE_VERIFIER", address(0));
 
         vm.startBroadcast();
-        new TEEBridge(kmsRoots);
+
+        DstackVerifier dstack = new DstackVerifier(kmsRoots);
+        TEEBridge bridge = new TEEBridge();
+        bridge.addVerifier(address(dstack));
+
+        if (sigstoreVerifier != address(0)) {
+            SigstoreAdapter sigAdapter = new SigstoreAdapter(sigstoreVerifier);
+            bridge.addVerifier(address(sigAdapter));
+        }
+
         vm.stopBroadcast();
     }
 
@@ -21,7 +30,6 @@ contract Deploy is Script {
         if (bytes(raw).length == 0) {
             return new address[](0);
         }
-        // Single address (no commas) — most common case
         return _singleRoot(vm.envAddress("KMS_ROOTS"));
     }
 

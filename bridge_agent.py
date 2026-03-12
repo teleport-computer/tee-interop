@@ -46,6 +46,7 @@ kms_signer = keys.Signature(kms_sig).recover_public_key_from_msg_hash(kms_msg_ha
 
 PROOF_JSON = {
     'code_id': '0x' + code_id.hex(),
+    'verifier': 'dstack',
     'dstack_proof': {
         'message_hash': '0x' + message_hash.hex(),
         'message_signature': '0x' + message_sig.hex(),
@@ -67,6 +68,7 @@ print("PROOF_JSON=" + json.dumps(PROOF_JSON))
 def proof():
     return jsonify({
         'code_id': '0x' + code_id.hex(),
+        'verifier': 'dstack',
         'dstack_proof': {
             'message_hash': '0x' + message_hash.hex(),
             'message_signature': '0x' + message_sig.hex(),
