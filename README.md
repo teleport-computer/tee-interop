@@ -2,7 +2,9 @@
 
 TEEBridge is a platform-agnostic registry where TEE-attested identities from **different platforms** register as peers and share secrets via ECIES-encrypted onboarding. Each attestation platform (dstack, GitHub/Sigstore, etc.) plugs in as an `IVerifier` — the registry has zero platform-specific code.
 
-## The Interface (ERC-8004)
+## The Interface
+
+> **Note:** We initially called this "ERC-8004" but that EIP covers AI agent identity. This interface is a candidate for a new EIP — a standard for pluggable TEE attestation verification on EVM.
 
 ```solidity
 interface IVerifier {
@@ -50,11 +52,24 @@ Members exchange ECIES-encrypted secrets via `onboard()`. Platform-agnostic — 
 
 | File | Role |
 |------|------|
-| `IVerifier.sol` | The interface — ERC-8004 |
+| `IVerifier.sol` | The interface (candidate EIP) |
 | `TEEBridge.sol` | Platform-agnostic registry + onboarding |
 | `DstackVerifier.sol` | dstack KMS signature chain verification |
 | `SigstoreAdapter.sol` | GitHub/Sigstore ZK proof verification |
 | `ISigstoreVerifier.sol` | Interface for deployed Sigstore ZK verifier |
+
+## Verifier Status
+
+| Platform | Status | Contract | Attestation Format | On-Chain Verification |
+|----------|--------|----------|-------------------|----------------------|
+| **dstack** (Phala, self-hosted) | **Done** | `DstackVerifier.sol` | KMS signature chain (secp256k1) | Native — 3 ecrecover + secp256k1 decompression |
+| **GitHub/Sigstore** | **Adapter written** | `SigstoreAdapter.sol` | ZK proof of Sigstore certificate chain | Wraps deployed Noir verifier on Base (`0x904A...`) |
+| **AWS Nitro** | **Not started** | — | COSE Sign1, P-384 ECDSA, x509 cert chain | P-384 not native to EVM. Needs Noir ZK proof (same pattern as Sigstore) or raw P-384 impl (~expensive). `codeId` = PCR0 |
+| **Intel TDX** (raw, non-dstack) | **Not started** | — | SGX/TDX quote (ECDSA P-256) | P-256 available via RIP-7212 on some chains. Automata Network has [on-chain verifiers](https://github.com/automata-network/automata-dcap-attestation). `codeId` = MRTD/RTMR |
+| **Oasis ROFL** | **Not started** | — | Runtime-verified, `bytes21` app ID | Only works on Sapphire via `roflEnsureAuthorizedOrigin()` precompile. Cross-chain would need attestation bridging — different architecture |
+| **ARM CCA** | **Not started** | — | CCA attestation token (COSE, EAT) | Similar to Nitro — needs ZK proof or native COSE/P-256 verification |
+
+**Want to add your platform?** Implement `IVerifier.verify(bytes proof) → (bytes32 codeId, bytes pubkey)` and open a PR. See [Adding a New Platform](#adding-a-new-platform) below.
 
 ## Quick Start
 
