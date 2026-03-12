@@ -14,6 +14,7 @@ contract TEEBridge {
         bytes32 codeId;
         address verifier;
         bytes pubkey;
+        bytes userData;
         uint256 registeredAt;
     }
     mapping(bytes32 => Member) internal _members;
@@ -24,7 +25,7 @@ contract TEEBridge {
     }
     mapping(bytes32 => OnboardMsg[]) internal _onboarding;
 
-    event MemberRegistered(bytes32 indexed memberId, bytes32 indexed codeId, address indexed verifier, bytes pubkey);
+    event MemberRegistered(bytes32 indexed memberId, bytes32 indexed codeId, address indexed verifier, bytes pubkey, bytes userData);
     event OnboardingPosted(bytes32 indexed toMember, bytes32 indexed fromMember);
     event AllowedCodeAdded(bytes32 indexed codeId);
     event AllowedCodeRemoved(bytes32 indexed codeId);
@@ -72,13 +73,13 @@ contract TEEBridge {
 
     function register(address verifier, bytes calldata proof) external returns (bytes32) {
         if (!allowedVerifiers[verifier]) revert VerifierNotAllowed();
-        (bytes32 codeId, bytes memory pubkey) = IVerifier(verifier).verify(proof);
+        (bytes32 codeId, bytes memory pubkey, bytes memory userData) = IVerifier(verifier).verifyAndCache(proof);
         if (!allowedCode[codeId]) revert CodeNotAllowed();
 
         bytes32 memberId = keccak256(pubkey);
         if (_members[memberId].registeredAt != 0) revert AlreadyRegistered();
-        _members[memberId] = Member({codeId: codeId, verifier: verifier, pubkey: pubkey, registeredAt: block.timestamp});
-        emit MemberRegistered(memberId, codeId, verifier, pubkey);
+        _members[memberId] = Member({codeId: codeId, verifier: verifier, pubkey: pubkey, userData: userData, registeredAt: block.timestamp});
+        emit MemberRegistered(memberId, codeId, verifier, pubkey, userData);
         return memberId;
     }
 
@@ -93,9 +94,9 @@ contract TEEBridge {
 
     // --- Views ---
 
-    function getMember(bytes32 memberId) external view returns (bytes32 codeId, address verifier, bytes memory pubkey, uint256 registeredAt) {
+    function getMember(bytes32 memberId) external view returns (bytes32 codeId, address verifier, bytes memory pubkey, bytes memory userData, uint256 registeredAt) {
         Member storage m = _members[memberId];
-        return (m.codeId, m.verifier, m.pubkey, m.registeredAt);
+        return (m.codeId, m.verifier, m.pubkey, m.userData, m.registeredAt);
     }
 
     function isMember(bytes32 memberId) external view returns (bool) {

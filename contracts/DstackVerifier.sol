@@ -46,10 +46,14 @@ contract DstackVerifier is IVerifier {
         emit KmsRootRemoved(root);
     }
 
-    function verify(bytes calldata proof) external view override returns (bytes32 codeId, bytes memory pubkey) {
+    function verify(bytes calldata proof) external view override returns (bytes32 codeId, bytes memory pubkey, bytes memory userData) {
         (bytes32 _codeId, DstackProof memory p) = abi.decode(proof, (bytes32, DstackProof));
         if (!_verifyDstackChain(_codeId, p)) revert InvalidDstackSignature();
-        return (_codeId, p.derivedCompressedPubkey);
+        return (_codeId, p.derivedCompressedPubkey, "");
+    }
+
+    function verifyAndCache(bytes calldata proof) external override returns (bytes32 codeId, bytes memory pubkey, bytes memory userData) {
+        return this.verify(proof);
     }
 
     function _verifyDstackChain(bytes32 _appId, DstackProof memory p) internal view returns (bool) {

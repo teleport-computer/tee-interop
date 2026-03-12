@@ -7,7 +7,7 @@ from eth_account import Account
 from ecies import encrypt as ecies_encrypt
 
 BRIDGE_ABI = json.loads("""[
-  {"inputs":[{"name":"memberId","type":"bytes32"}],"name":"getMember","outputs":[{"name":"codeId","type":"bytes32"},{"name":"verifier","type":"address"},{"name":"pubkey","type":"bytes"},{"name":"registeredAt","type":"uint256"}],"stateMutability":"view","type":"function"},
+  {"inputs":[{"name":"memberId","type":"bytes32"}],"name":"getMember","outputs":[{"name":"codeId","type":"bytes32"},{"name":"verifier","type":"address"},{"name":"pubkey","type":"bytes"},{"name":"userData","type":"bytes"},{"name":"registeredAt","type":"uint256"}],"stateMutability":"view","type":"function"},
   {"inputs":[{"name":"memberId","type":"bytes32"}],"name":"isMember","outputs":[{"name":"","type":"bool"}],"stateMutability":"view","type":"function"},
   {"inputs":[{"name":"fromMemberId","type":"bytes32"},{"name":"toMemberId","type":"bytes32"},{"name":"encryptedPayload","type":"bytes"}],"name":"onboard","outputs":[],"stateMutability":"nonpayable","type":"function"}
 ]""")

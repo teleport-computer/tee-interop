@@ -1,18 +1,29 @@
 # TEEBridge: Multi-Verifier TEE Membership Registry
 
-TEEBridge is a platform-agnostic registry where TEE-attested identities from **different platforms** register as peers and share secrets via ECIES-encrypted onboarding. Each attestation platform (dstack, GitHub/Sigstore, etc.) plugs in as an `IVerifier` — the registry has zero platform-specific code.
+TEEBridge is a platform-agnostic registry where TEE-attested identities from **different platforms** register as peers and share secrets via ECIES-encrypted onboarding. Each attestation platform (dstack, GitHub/Sigstore, Nitro, TDX, etc.) plugs in as an `IVerifier` — the registry has zero platform-specific code.
 
 ## The Interface
 
-> **Note:** We initially called this "ERC-8004" but that EIP covers AI agent identity. This interface is a candidate for a new EIP — a standard for pluggable TEE attestation verification on EVM.
+> This interface is a candidate for a new EIP — a standard for pluggable TEE attestation verification on EVM. See [Relationship to Sparsity 8004 POC](#relationship-to-sparsity-8004-poc) for how we compare to the existing reference implementation.
 
 ```solidity
 interface IVerifier {
-    function verify(bytes calldata proof) external view returns (bytes32 codeId, bytes memory pubkey);
+    /// Pure verification — no state changes
+    function verify(bytes calldata proof) external view
+        returns (bytes32 codeId, bytes memory pubkey, bytes memory userData);
+
+    /// Verification with optional caching (e.g. Nitro cert chain)
+    function verifyAndCache(bytes calldata proof) external
+        returns (bytes32 codeId, bytes memory pubkey, bytes memory userData);
 }
 ```
 
-Each verifier decodes its own proof format from opaque `bytes`. Returns the two things the registry needs: **code identity** and **member pubkey**.
+Each verifier decodes its own proof format from opaque `bytes`. Returns three things:
+- **`codeId`** — code identity (compose hash, PCR0, commit SHA, etc.)
+- **`pubkey`** — member's public key for ECIES encryption
+- **`userData`** — arbitrary attestation-embedded data (e.g. an Ethereum address, reportData)
+
+The `verify`/`verifyAndCache` split keeps the interface `view`-clean while supporting verifiers that benefit from caching (like Nitro's P-384 x509 chain — 56M gas cold, 18M warm). The registry calls `verifyAndCache` during registration; `verify` exists for off-chain reads and view-compatible verifiers.
 
 ## Architecture
 
@@ -26,7 +37,7 @@ Each verifier decodes its own proof format from opaque `bytes`. Returns the two 
          ▼                    ▼                     ▼
 ┌──────────────────────────────────────────────────────────────┐
 │  TEEBridge.sol — platform-agnostic registry                  │
-│  register(verifier, proof) → IVerifier(verifier).verify()    │
+│  register(verifier, proof) → IVerifier.verifyAndCache()      │
 │  allowedVerifiers, allowedCode, members, onboarding          │
 ├──────────────────────────────────────────────────────────────┤
 │  ┌─────────────────┐  ┌──────────────────┐                   │
@@ -40,36 +51,56 @@ Each verifier decodes its own proof format from opaque `bytes`. Returns the two 
 
 1. **CVM** runs Flask server exposing `/proof` with platform-specific proof JSON
 2. **External script** (`register.py`) fetches proof, calls `TEEBridge.register(verifier, encodedProof)`
-3. **TEEBridge** delegates to `IVerifier(verifier).verify(proof)` → gets `(codeId, pubkey)`
-4. **TEEBridge** checks `allowedCode[codeId]`, stores member with `verifier` field
-5. `MemberRegistered(memberId, codeId, verifier, pubkey)` emitted — filterable by platform
+3. **TEEBridge** delegates to `IVerifier(verifier).verifyAndCache(proof)` → gets `(codeId, pubkey, userData)`
+4. **TEEBridge** checks `allowedCode[codeId]`, stores member with `verifier` and `userData` fields
+5. `MemberRegistered(memberId, codeId, verifier, pubkey, userData)` emitted — filterable by platform
 
-### Onboarding (unchanged)
+### Onboarding: ECIES Secret Sharing
 
-Members exchange ECIES-encrypted secrets via `onboard()`. Platform-agnostic — any member can onboard any other member.
+Members exchange ECIES-encrypted secrets via `onboard()`. This is the layer that makes TEEBridge useful beyond just a registry — attested enclaves from different platforms can share secrets without any shared KMS infrastructure.
+
+```
+CVM-A (dstack, Phala)  ──onboard(encrypted)──▶  TEEBridge  ──▶  CVM-B (Nitro, AWS)
+                                                                   └─ decrypts with
+                                                                      KMS-derived key
+```
 
 ## Contract Layout
 
 | File | Role |
 |------|------|
 | `IVerifier.sol` | The interface (candidate EIP) |
-| `TEEBridge.sol` | Platform-agnostic registry + onboarding |
+| `TEEBridge.sol` | Platform-agnostic registry + ECIES onboarding |
 | `DstackVerifier.sol` | dstack KMS signature chain verification |
 | `SigstoreAdapter.sol` | GitHub/Sigstore ZK proof verification |
 | `ISigstoreVerifier.sol` | Interface for deployed Sigstore ZK verifier |
 
 ## Verifier Status
 
-| Platform | Status | Contract | Attestation Format | On-Chain Verification |
-|----------|--------|----------|-------------------|----------------------|
-| **dstack** (Phala, self-hosted) | **Done** | `DstackVerifier.sol` | KMS signature chain (secp256k1) | Native — 3 ecrecover + secp256k1 decompression |
-| **GitHub/Sigstore** | **Adapter written** | `SigstoreAdapter.sol` | ZK proof of Sigstore certificate chain | Wraps deployed Noir verifier on Base (`0x904A...`) |
-| **AWS Nitro** | **Not started** | — | COSE Sign1, P-384 ECDSA, x509 cert chain | P-384 not native to EVM. Needs Noir ZK proof (same pattern as Sigstore) or raw P-384 impl (~expensive). `codeId` = PCR0 |
-| **Intel TDX** (raw, non-dstack) | **Not started** | — | SGX/TDX quote (ECDSA P-256) | P-256 available via RIP-7212 on some chains. Automata Network has [on-chain verifiers](https://github.com/automata-network/automata-dcap-attestation). `codeId` = MRTD/RTMR |
-| **Oasis ROFL** | **Not started** | — | Runtime-verified, `bytes21` app ID | Only works on Sapphire via `roflEnsureAuthorizedOrigin()` precompile. Cross-chain would need attestation bridging — different architecture |
-| **ARM CCA** | **Not started** | — | CCA attestation token (COSE, EAT) | Similar to Nitro — needs ZK proof or native COSE/P-256 verification |
+| Platform | Status | Contract | Attestation | On-Chain Verification | Gas |
+|----------|--------|----------|-------------|----------------------|-----|
+| **dstack** (Phala, self-hosted) | **Done** | `DstackVerifier.sol` | KMS sig chain (secp256k1) | 3x ecrecover + secp256k1 decompress | ~200K |
+| **GitHub/Sigstore** | **Adapter written** | `SigstoreAdapter.sol` | ZK proof of certificate chain | Wraps Noir verifier on Base (`0x904A...`) | ~300K |
+| **AWS Nitro** | **Reference exists** | [Sparsity POC](https://github.com/sparsity-xyz/8004-tee-registry-ri) | COSE Sign1, P-384, x509 | Pure Solidity P-384 via `@solarity/libs` + cert caching | ~18M warm, ~56M cold |
+| **Intel TDX/SGX** (raw DCAP) | **Reference exists** | [Sparsity POC](https://github.com/sparsity-xyz/8004-tee-registry-ri) | DCAP quote (P-256) | Automata `verifyAndAttestOnChain()` | ~4-5M |
+| **Oasis ROFL** | **Not started** | — | Runtime-verified, `bytes21` app ID | Sapphire precompile only. Cross-chain needs attestation bridging | N/A |
+| **ARM CCA** | **Not started** | — | CCA token (COSE, EAT) | Similar to Nitro — P-256/P-384 + CBOR | TBD |
 
-**Want to add your platform?** Implement `IVerifier.verify(bytes proof) → (bytes32 codeId, bytes pubkey)` and open a PR. See [Adding a New Platform](#adding-a-new-platform) below.
+**Want to add your platform?** Implement `IVerifier` and open a PR. See [Adding a New Platform](#adding-a-new-platform).
+
+## Relationship to Sparsity 8004 POC
+
+The [Sparsity `8004-tee-registry-ri`](https://github.com/sparsity-xyz/8004-tee-registry-ri) is a working multi-verifier TEE registry deployed on Base Sepolia with Nitro and TDX verifiers. Our interfaces are converging — here are the intentional differences:
+
+| | Sparsity POC | TEEBridge |
+|---|---|---|
+| **`verify()` mutability** | Non-view only (Nitro cert caching mutates state) | `verify()` is `view`; `verifyAndCache()` is non-view. Caching is opt-in, not forced on view-compatible verifiers |
+| **Onboarding layer** | Registry only — no secret sharing | **ECIES onboarding built in.** Members encrypt secrets to each other's registered pubkeys on-chain. This is the key layer for cross-platform secret sharing without shared KMS |
+| **Verifier selection** | Caller passes `TEEType` enum | Caller passes verifier contract address. More flexible — new platforms don't need enum updates |
+| **Code allowlisting** | `whitelistMeasurement(bytes32, string)` with source URL | `addAllowedCode(bytes32)` — simpler, source linking is off-chain |
+| **Return values** | `(codeMeasurement, pubKey, userData)` | Same — `(codeId, pubkey, userData)` |
+
+The core `IVerifier` interface is compatible. The main value-add of TEEBridge over the Sparsity registry is the **onboarding layer** — without it, registered members have no way to actually share secrets.
 
 ## Quick Start
 
@@ -123,13 +154,13 @@ python3 onboard.py \
 
 ## Adding a New Platform
 
-Implement `IVerifier.verify(bytes proof) → (bytes32 codeId, bytes pubkey)`:
+Implement both functions from `IVerifier`:
 
-1. Define your proof encoding (abi.encode whatever your platform needs)
-2. Verify attestation inside `verify()` — revert on failure
-3. Return `codeId` (code identity hash) and `pubkey` (member's compressed public key)
-4. Deploy and call `bridge.addVerifier(yourVerifier)`
+1. **`verify(bytes proof)`** (`view`) — decode your proof format, verify attestation, return `(codeId, pubkey, userData)`. Revert on failure.
+2. **`verifyAndCache(bytes proof)`** — if your verification benefits from caching (like Nitro's cert chain), do it here. Otherwise just delegate to `verify()`.
+3. Deploy and call `bridge.addVerifier(yourVerifier)`
 
-## Reference Deployment
+## Reference Deployments
 
-TEEBridge on **Base mainnet**: [`0x254057d9d92FC7F75E3D49F0c6B0be9eE2A334D5`](https://basescan.org/address/0x254057d9d92FC7F75E3D49F0c6B0be9eE2A334D5) (previous single-verifier version)
+- **TEEBridge** on Base mainnet: [`0x254057d9d92FC7F75E3D49F0c6B0be9eE2A334D5`](https://basescan.org/address/0x254057d9d92FC7F75E3D49F0c6B0be9eE2A334D5) (previous single-verifier version)
+- **Sparsity TEE Registry** on Base Sepolia: [`0xf08d07b09c33535dcc4c3bae04ccc5466e9297ee`](https://sepolia.basescan.org/address/0xf08d07b09c33535dcc4c3bae04ccc5466e9297ee) (Nitro + TDX, no onboarding)

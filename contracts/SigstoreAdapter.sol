@@ -11,7 +11,7 @@ contract SigstoreAdapter is IVerifier {
         sigstore = ISigstoreVerifier(_sigstore);
     }
 
-    function verify(bytes calldata proof) external view override returns (bytes32 codeId, bytes memory pubkey) {
+    function verify(bytes calldata proof) external view override returns (bytes32 codeId, bytes memory pubkey, bytes memory userData) {
         (bytes memory zkProof, bytes32[] memory publicInputs, bytes memory compressedPubkey, bytes memory ownershipSig)
             = abi.decode(proof, (bytes, bytes32[], bytes, bytes));
 
@@ -22,7 +22,11 @@ contract SigstoreAdapter is IVerifier {
         address signer = _recoverSigner(msgHash, ownershipSig);
         require(signer == _compressedPubkeyToAddress(compressedPubkey), "ownership mismatch");
 
-        return (bytes32(att.commitSha), compressedPubkey);
+        return (bytes32(att.commitSha), compressedPubkey, abi.encodePacked(att.repoHash));
+    }
+
+    function verifyAndCache(bytes calldata proof) external override returns (bytes32 codeId, bytes memory pubkey, bytes memory userData) {
+        return this.verify(proof);
     }
 
     function _recoverSigner(bytes32 hash, bytes memory sig) internal pure returns (address) {
