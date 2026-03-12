@@ -1,0 +1,128 @@
+services:
+  bridge-agent:
+    build:
+      context: .
+      dockerfile_inline: |
+        FROM python:3.11-slim
+        WORKDIR /app
+        RUN pip install flask web3 eth-keys eth-account eciespy dstack-sdk
+        RUN cat > agent.py <<'PYEOF'
+        import json
+        from flask import Flask, jsonify, request
+        from dstack_sdk import DstackClient
+        from eth_account import Account
+        from eth_keys import keys
+        from eth_utils import keccak
+        from ecies import decrypt as ecies_decrypt
+        from web3 import Web3
+
+        BRIDGE_ABI = json.loads('[{"inputs":[{"name":"memberId","type":"bytes32"}],"name":"getOnboarding","outputs":[{"components":[{"name":"fromMember","type":"bytes32"},{"name":"encryptedPayload","type":"bytes"}],"name":"","type":"tuple[]"}],"stateMutability":"view","type":"function"}]')
+
+        app = Flask(__name__)
+
+        client = DstackClient()
+        info = client.info()
+        app_id = info.app_id
+        app_id_bytes20 = bytes.fromhex(app_id.replace('0x', ''))
+
+        result = client.get_key("/bridge", "ethereum")
+        derived_key = bytes.fromhex(result.key.replace('0x', ''))[:32]
+        priv = keys.PrivateKey(derived_key)
+        derived_pubkey = priv.public_key.to_compressed_bytes()
+        acct = Account.from_key(derived_key)
+
+        app_sig = bytes.fromhex(result.signature_chain[0].replace('0x', ''))
+        kms_sig = bytes.fromhex(result.signature_chain[1].replace('0x', ''))
+
+        app_msg = f"ethereum:{derived_pubkey.hex()}"
+        app_msg_hash = keccak(text=app_msg)
+        app_pubkey = keys.Signature(app_sig).recover_public_key_from_msg_hash(app_msg_hash).to_compressed_bytes()
+
+        message_hash = keccak(b"tee-bridge-register")
+        eth_hash = keccak(b"\x19Ethereum Signed Message:\n32" + message_hash)
+        message_sig = bytes(acct.unsafe_sign_hash(eth_hash).signature)
+
+        code_id = app_id_bytes20 + b'\x00' * 12
+        member_id = Web3.solidity_keccak(["bytes"], [derived_pubkey])
+
+        kms_msg = b"dstack-kms-issued:" + app_id_bytes20 + app_pubkey
+        kms_msg_hash = keccak(kms_msg)
+        kms_signer = keys.Signature(kms_sig).recover_public_key_from_msg_hash(kms_msg_hash)
+
+        PROOF_DATA = {
+            'code_id': '0x' + code_id.hex(),
+            'dstack_proof': {
+                'message_hash': '0x' + message_hash.hex(),
+                'message_signature': '0x' + message_sig.hex(),
+                'app_signature': '0x' + app_sig.hex(),
+                'kms_signature': '0x' + kms_sig.hex(),
+                'derived_compressed_pubkey': '0x' + derived_pubkey.hex(),
+                'app_compressed_pubkey': '0x' + app_pubkey.hex(),
+                'purpose': 'ethereum',
+            },
+            'kms_root': kms_signer.to_checksum_address(),
+            'member_id': '0x' + member_id.hex(),
+            'app_id': app_id,
+            'derived_address': acct.address,
+        }
+        print("PROOF_JSON=" + json.dumps(PROOF_DATA))
+
+        @app.route('/proof')
+        def proof():
+            return jsonify(PROOF_DATA)
+
+        @app.route('/info')
+        def info_endpoint():
+            return jsonify({
+                'app_id': app_id,
+                'member_id': '0x' + member_id.hex(),
+                'derived_address': acct.address,
+                'derived_pubkey': '0x' + derived_pubkey.hex(),
+                'code_id': '0x' + code_id.hex(),
+                'kms_root': kms_signer.to_checksum_address(),
+            })
+
+        @app.route('/onboarding')
+        def onboarding():
+            bridge_addr = request.args.get('bridge')
+            rpc_url = request.args.get('rpc', 'https://mainnet.base.org')
+            if not bridge_addr:
+                return jsonify({'error': 'pass ?bridge=0x... contract address'}), 400
+            w3 = Web3(Web3.HTTPProvider(rpc_url))
+            bridge = w3.eth.contract(address=Web3.to_checksum_address(bridge_addr), abi=BRIDGE_ABI)
+            msgs = bridge.functions.getOnboarding(member_id).call()
+            decrypted = []
+            for msg in msgs:
+                plaintext = ecies_decrypt(derived_key, msg[1])
+                decrypted.append({'from': '0x' + msg[0].hex(), 'payload': plaintext.decode()})
+            return jsonify({'member_id': '0x' + member_id.hex(), 'messages': decrypted})
+
+        import os, threading, time
+        def check_onboarding(bridge_addr, rpc_url='https://mainnet.base.org'):
+            w3 = Web3(Web3.HTTPProvider(rpc_url))
+            bridge = w3.eth.contract(address=Web3.to_checksum_address(bridge_addr), abi=BRIDGE_ABI)
+            msgs = bridge.functions.getOnboarding(member_id).call()
+            if not msgs:
+                print("No onboarding messages yet")
+                return
+            for msg in msgs:
+                plaintext = ecies_decrypt(derived_key, msg[1])
+                print(f"ONBOARDING from={msg[0].hex()} payload={plaintext.decode()}")
+
+        if __name__ == '__main__':
+            bridge_addr = os.environ.get('BRIDGE_CONTRACT')
+            if bridge_addr:
+                def poll():
+                    time.sleep(5)
+                    while True:
+                        try:
+                            check_onboarding(bridge_addr)
+                        except Exception as e:
+                            print(f"Onboarding check error: {e}")
+                        time.sleep(60)
+                threading.Thread(target=poll, daemon=True).start()
+            app.run(host='0.0.0.0', port=8080)
+        PYEOF
+        CMD ["python", "-u", "agent.py"]
+    volumes:
+      - /var/run/dstack.sock:/var/run/dstack.sock

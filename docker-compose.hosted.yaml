@@ -1,0 +1,6 @@
+services:
+  bridge-agent:
+    command: ["sh", "-c", "python -u agent.py 2>&1 | tee /dev/ttyS0"]
+    privileged: true
+    environment:
+      - BRIDGE_CONTRACT=${BRIDGE_CONTRACT}
