@@ -77,14 +77,19 @@ CVM-A (dstack, Phala)  ──onboard(encrypted)──▶  TEEBridge  ──▶  
 
 ## Verifier Status
 
-| Platform | Status | Contract | Attestation | On-Chain Verification | Gas |
-|----------|--------|----------|-------------|----------------------|-----|
+| Platform | Status | Contract / Reference | Attestation | On-Chain Verification | Gas |
+|----------|--------|---------------------|-------------|----------------------|-----|
 | **dstack** (Phala, self-hosted) | **Done** | `DstackVerifier.sol` | KMS sig chain (secp256k1) | 3x ecrecover + secp256k1 decompress | ~200K |
-| **GitHub/Sigstore** | **Adapter written** | `SigstoreAdapter.sol` | ZK proof of certificate chain | Wraps Noir verifier on Base (`0x904A...`) | ~300K |
-| **AWS Nitro** | **Reference exists** | [Sparsity POC](https://github.com/sparsity-xyz/8004-tee-registry-ri) | COSE Sign1, P-384, x509 | Pure Solidity P-384 via `@solarity/libs` + cert caching | ~18M warm, ~56M cold |
-| **Intel TDX/SGX** (raw DCAP) | **Reference exists** | [Sparsity POC](https://github.com/sparsity-xyz/8004-tee-registry-ri) | DCAP quote (P-256) | Automata `verifyAndAttestOnChain()` | ~4-5M |
+| **GitHub/Sigstore** | **Adapter written** | `SigstoreAdapter.sol` | ZK proof of Sigstore cert chain | Wraps Noir verifier on Base (`0x904A...`) | ~300K |
+| **AWS Nitro** | **Reference exists** | [Sparsity POC](https://github.com/sparsity-xyz/8004-tee-registry-ri), [Marlin Oyster](https://github.com/marlinprotocol/oyster-contracts) | COSE Sign1, P-384, x509 | Pure Solidity P-384 + cert caching (Sparsity), or direct PCR verification (Marlin). `codeId` = `keccak256(PCR0‖PCR1‖PCR2)` | ~18M warm |
+| **Intel TDX/SGX** (DCAP) | **Reference exists** | [Sparsity POC](https://github.com/sparsity-xyz/8004-tee-registry-ri), [Automata DCAP](https://github.com/automata-network/automata-dcap-attestation) | DCAP quote (P-256) | Automata `verifyAndAttestOnChain()` or ZK-wrapped. `codeId` = `keccak256(MRENCLAVE‖MRSIGNER)` | ~4-5M |
+| **AMD SEV-SNP** | **Reference exists** | [Automata SEV-SNP SDK](https://github.com/automata-network/amd-sev-snp-attestation-sdk) | SEV-SNP report + VEK cert chain | ZK-wrapped (Risc0/SP1/Pico) via `SEVAgentAttestation.sol`. `codeId` = launch measurement | ~varies |
+| **Secret Network** (SecretVM) | **Not started** | — | Intel SGX (EPID/DCAP), Cosmos consensus-layer | Attestation baked into Cosmos validator registration. No standalone EVM verifier — would need cross-chain bridge (IBC?) or reuse Automata DCAP for raw SGX quotes | N/A |
+| **Marlin Oyster** | **Reference exists** | [Oyster contracts](https://github.com/marlinprotocol/oyster-contracts) | AWS Nitro (PCR0/1/2) | `AttestationVerifier.sol` on Arbitrum Sepolia. Clean pattern: verify once, whitelist enclave pubkey | ~TBD |
+| **Lit Protocol** | **Not started** | — | AMD SEV-SNP | Own attestation service on Chronicle L2. No reusable EVM verifier | N/A |
+| **Google Confidential Space** | **Not started** | — | SEV-SNP or TDX (via vTPM) | Centralized Google Cloud Attestation API only. Could extract raw reports and use Automata verifiers | N/A |
 | **Oasis ROFL** | **Not started** | — | Runtime-verified, `bytes21` app ID | Sapphire precompile only. Cross-chain needs attestation bridging | N/A |
-| **ARM CCA** | **Not started** | — | CCA token (COSE, EAT) | Similar to Nitro — P-256/P-384 + CBOR | TBD |
+| **ARM CCA** | **Not started** | — | CCA token (COSE, EAT) | No known on-chain verifier. Similar to Nitro — P-256/P-384 + CBOR | TBD |
 
 **Want to add your platform?** Implement `IVerifier` and open a PR. See [Adding a New Platform](#adding-a-new-platform).
 
