@@ -2,9 +2,9 @@
 
 TEEBridge is a platform-agnostic registry where TEE-attested identities from **different platforms** register as peers and share secrets via ECIES-encrypted onboarding. Each attestation platform (dstack, GitHub/Sigstore, Nitro, TDX, etc.) plugs in as an `IVerifier` — the registry has zero platform-specific code.
 
-## The Interface
+## The Interface (ERC-733)
 
-> This interface is a candidate for a new EIP — a standard for pluggable TEE attestation verification on EVM. See [Relationship to Sparsity 8004 POC](#relationship-to-sparsity-8004-poc) for how we compare to the existing reference implementation.
+> Part of the ongoing input process for ERC-8004 (TEE attestation standards). See [Relationship to Sparsity 8004 POC](#relationship-to-sparsity-8004-poc) for how we compare to the existing reference implementation.
 
 ```solidity
 interface IVerifier {
@@ -69,7 +69,7 @@ CVM-A (dstack, Phala)  ──onboard(encrypted)──▶  TEEBridge  ──▶  
 
 | File | Role |
 |------|------|
-| `IVerifier.sol` | The interface (candidate EIP) |
+| `IVerifier.sol` | The interface (ERC-733) |
 | `TEEBridge.sol` | Platform-agnostic registry + ECIES onboarding |
 | `DstackVerifier.sol` | dstack KMS signature chain verification |
 | `SigstoreAdapter.sol` | GitHub/Sigstore ZK proof verification |
@@ -156,6 +156,32 @@ python3 onboard.py \
 
 - **Polling**: Set `BRIDGE_CONTRACT` env var — agent polls every 60s
 - **HTTP**: `GET /onboarding?bridge=0x...` returns decrypted messages
+
+## Verification Approaches: ZK vs Direct On-Chain
+
+The `IVerifier` interface is agnostic to how verification happens internally. In practice there are three tiers:
+
+**Native EVM crypto (cheapest, no ZK)**
+| Verifier | Crypto | Gas | Why it's cheap |
+|----------|--------|-----|---------------|
+| dstack | secp256k1 ecrecover | ~200K | EVM precompile |
+| Intel TDX/SGX (DCAP) | ECDSA P-256 | ~4-5M | RIP-7212 precompile on Base/OP |
+
+**ZK-wrapped (medium cost, universal)**
+| Verifier | Proof System | Verifier Gas | Confirmed? |
+|----------|-------------|-------------|------------|
+| Sigstore ([github-zktls](https://github.com/anthropics/github-zktls)) | Noir / UltraHonk | **~2.83M** | Yes — [gas analysis](https://github.com/anthropics/github-zktls/blob/main/docs/gas-analysis.md) |
+| AMD SEV-SNP ([Automata](https://github.com/automata-network/amd-sev-snp-attestation-sdk)) | SP1 → Groth16 | **~293-315K** | Yes — Sepolia txns |
+| AMD SEV-SNP (Automata) | Risc0 → Groth16 | **~250-270K** | Estimated (no txns yet) |
+
+**Direct on-chain (expensive, no trusted setup)**
+| Verifier | Crypto | Gas |
+|----------|--------|-----|
+| AWS Nitro ([Sparsity](https://github.com/sparsity-xyz/8004-tee-registry-ri)) | P-384 ECDSA in Solidity + cert caching | ~18M warm, ~56M cold |
+
+**Why is Groth16 10x cheaper than UltraHonk?** Groth16 verification is a single pairing check (~181-362K gas). UltraHonk verification requires Shplemini polynomial commitment checks (62-point MSM + fold + pairing) at ~2.83M gas. The tradeoff: Groth16 needs a trusted setup per-circuit and proving is slower; UltraHonk has no trusted setup and faster proving. For attestation verification where the circuit is stable, Groth16's gas advantage matters.
+
+**zkVM vs circuit DSL:** Risc0/SP1 let you write verification logic in Rust and get a Groth16 proof. Noir requires rewriting as a circuit. For complex verification (CBOR parsing, x509 chains, P-384), the zkVM path is significantly less development effort. The `IVerifier` interface doesn't care which approach a verifier uses — this is an implementation choice per platform.
 
 ## Adding a New Platform
 
