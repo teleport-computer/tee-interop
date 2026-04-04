@@ -2,61 +2,84 @@
 
 ## Problem Statement
 
-Phala Cloud's Base KMS has a fundamental limitation: **you cannot deploy two CVMs with the same `app_id`**. This means two TEE instances running identical code on different machines will derive different keys via `DstackClient.get_key()`, because each gets a unique `app_id`.
+Phala Cloud's native replication (`POST /cvms/{uuid}/replicas`) works for deploying multiple CVMs with the same `app_id` on Base KMS — **when you use working nodes** (prod5, prod9). However, the tooling around it is fragile:
 
-This document explains the limitation in detail, how we work around it using TEEBridge, and how to deploy and use the KMS aggregator service so your app gets the same key across any number of CVM instances.
+- The `phala cvms replicate` CLI (v1.1.13) is broken for Base KMS (validation errors, can't resolve CVM names/UUIDs)
+- prod7 has a device ID mismatch that breaks per-device allowlisting entirely
+- There is no CLI support for adding device IDs to AppAuth contracts — you need raw contract calls
+
+For the simple case (same code on 2-3 nodes), **use the native replicas API directly** — see [TWO-NODE-CLUSTER.md](TWO-NODE-CLUSTER.md).
+
+The **KMS aggregator** (TEEBridge) solves a different problem: letting **multiple independent applications with different compose hashes** share the same derived keys. This is useful when:
+
+- You run a key management service for other app developers
+- Multiple apps (different code, different app_ids) need access to the same signing key
+- You want cross-platform key sharing (dstack + GitHub Actions + Nitro, etc.)
 
 ---
 
-## Part A: Phala Cloud API Limitations (Detailed)
+## Part A: Phala Cloud Operational Notes
 
-### The app_id = identity problem
+### Native replication (the simple path)
 
-In dstack, `app_id` is the fundamental identity. When you call `client.get_key("/oracle", "ethereum")`, the KMS derives a key specific to that `app_id`. Two CVMs with the same `app_id` get the same key. Two CVMs with different `app_id`s get different keys.
+Deploying 2 nodes with the same `app_id` works via the REST API:
 
-The `phala deploy` CLI creates a new `app_id` on every deploy. Each `app_id` gets its own `AppAuth` smart contract on Base that controls which compose hashes and devices are allowed.
+1. `phala deploy --node-id 26 --kms base` (deploy on prod5)
+2. `addDevice(prod9_device_id)` on the AppAuth contract
+3. `POST /api/v1/cvms/{uuid}/replicas` with `{"teepod_id": 18}` (prod9)
 
-### Why you can't reuse an app_id
+Both instances derive the same key from `getKey()`. See [TWO-NODE-CLUSTER.md](TWO-NODE-CLUSTER.md) for the full procedure.
 
-We tried every available path:
+### Node-specific issues
 
-1. **Same app_id + same compose_hash via `POST /cvms`**: The API is idempotent — returns the existing CVM instead of creating a second one.
-
-2. **Same app_id + different compose_hash**: Rejected with HTTP 409: `"This app_id already has an active CVM with a different configuration."`
-
-3. **Same app_id + stopped CVM**: Same 409. "Active" means "exists", not "running".
-
-4. **`POST /cvms/{id}/replicas` (Base KMS)**: Returns HTTP 500 Internal Server Error consistently. This is the only sanctioned API path for adding a second CVM to an existing `app_id`. It works on Phala KMS (chain_id=0) but is **broken on Base KMS (chain_id=8453)**.
-
-5. **`phala cvms replicate` CLI**: Same 500 underneath.
-
-### The device_id inconsistency (prod7)
-
-Each Phala Cloud node has a device identity derived from the TDX hardware. The `AppAuth` contract can restrict which devices are allowed to boot a given app. We found that **prod7 has a device_id mismatch**:
+**prod7 (node-id 12) is broken.** It has a device ID mismatch — three different sources report three different device IDs:
 
 | Source | device_id for prod7 |
 |--------|-------------------|
 | `phala cvms get` (CVM info) | `935b9a1b6438a398...` |
 | `phala cvms list-nodes` | `e5a0c70bb6503de2...` |
-| KMS at boot time | ??? (rejects the registered ID) |
+| KMS at boot time | ??? (rejects both) |
 
-The `phala deploy --kms base` CLI registers the CVM info device_id on the AppAuth contract, but the KMS passes a different one when calling `isAppAllowed()`. This causes "Boot denied: Device not allowed" even though the contract shows the device as allowed.
+Per-device allowlisting always fails on prod7. The only workaround is `setAllowAnyDevice(true)`, which is unacceptable for production because it disables hardware attestation of the physical machine.
 
-**prod5 and prod9 do not have this issue** — per-device allowlisting works correctly on those nodes.
+**prod5 (node-id 26) and prod9 (node-id 18) work correctly.** Per-device allowlisting, native replication, and the replicas API all function as expected on these nodes.
 
-### What allowAnyDevice actually means
+### CLI bugs (v1.1.13)
+
+- `phala cvms replicate <name>` — "CVM not found"
+- `phala cvms replicate <uuid>` — "CVM not found"
+- `phala cvms replicate <app_id>` — validation error (missing fields)
+
+The REST API works fine. Use `POST /api/v1/cvms/{vm_uuid}/replicas` directly.
+
+### Do not use allowAnyDevice
 
 The `AppAuth` contract has `setAllowAnyDevice(bool)`. Setting it to `true` skips the device_id check entirely. This is **unacceptable for production** because it allows any TDX device (including potentially compromised hardware) to boot your app and derive keys.
 
-Per-device allowlisting is the correct approach: you explicitly add each physical machine's device_id to your AppAuth contract. This works on prod5 and prod9.
+Per-device allowlisting is the correct approach: explicitly add each physical machine's device_id to your AppAuth contract.
+
+| Node | node-id | Device ID |
+|------|---------|-----------|
+| prod5 | 26 | `c4691f9c88f44e05cbc45521678e72b99fcd54fa35d302f13e8f9fa9727f33a6` |
+| prod9 | 18 | `573f4908a95b4159c4c262fc8244a485a77d874dc4b1bdf28d38afe80ca77431` |
 
 ---
 
-## Part B: TEEBridge Workaround
+## Part B: TEEBridge — Cross-App Key Sharing
+
+### Why not just use native replication?
+
+For most cases within Phala Cloud, you should. Native replication via `POST /replicas` handles same-code and different-code replicas (you can add multiple compose hashes to one AppAuth contract). It's simpler and doesn't require extra infrastructure.
+
+TEEBridge adds value in narrower scenarios:
+
+- **Cross-platform attestation** — dstack, GitHub Actions (Sigstore), AWS Nitro, and Intel TDX instances sharing secrets, verified by platform-specific on-chain verifiers
+- **Independent operators** — parties who don't share a Phala Cloud account and can't coordinate on a single app_id
+- **Resilience** — a fallback if Phala's CLI/API has issues on specific nodes (as we saw with prod7)
 
 ### Architecture
 
-Since we can't give two CVMs the same `app_id`, we give each its own `app_id` and use an on-chain registry (TEEBridge) to:
+Each CVM gets its own `app_id` and uses an on-chain registry (TEEBridge) to:
 
 1. **Verify attestation**: Each CVM proves it's running attested code via the DstackVerifier contract, which checks the KMS signature chain on-chain (secp256k1 ecrecover, ~200K gas).
 
