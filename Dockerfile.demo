@@ -1,0 +1,6 @@
+FROM python:3.11-slim
+WORKDIR /app
+RUN pip install flask web3 eth-keys eth-account eciespy dstack-sdk eth-abi
+COPY bridge_client.py .
+COPY demo_app.py .
+CMD ["python", "-u", "demo_app.py"]

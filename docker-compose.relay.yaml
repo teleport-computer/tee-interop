@@ -1,0 +1,13 @@
+services:
+  relay:
+    image: socrates1024/tee-bridge-relay@sha256:50eabaaf3f55ba0f54a2d93dfa0b65342f1eb6df44fd10a38e437950c9327c27
+    ports:
+      - "8080:8080"
+    environment:
+      - BRIDGE_CONTRACT=${BRIDGE_CONTRACT}
+      - VERIFIER_CONTRACT=${VERIFIER_CONTRACT}
+      - RELAY_PRIVATE_KEY=${RELAY_PRIVATE_KEY}
+      - RPC_URL=${RPC_URL:-https://mainnet.base.org}
+      - KEY_PATHS=${KEY_PATHS:-["/oracle:ethereum"]}
+    volumes:
+      - /var/run/dstack.sock:/var/run/dstack.sock

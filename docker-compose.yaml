@@ -124,5 +124,7 @@ services:
             app.run(host='0.0.0.0', port=8080)
         PYEOF
         CMD ["python", "-u", "agent.py"]
+    ports:
+      - "8080:8080"
     volumes:
       - /var/run/dstack.sock:/var/run/dstack.sock

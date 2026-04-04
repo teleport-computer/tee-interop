@@ -65,14 +65,17 @@ deployer = Account.from_key(args.private_key)
 bridge = w3.eth.contract(address=Web3.to_checksum_address(args.bridge), abi=BRIDGE_ABI)
 verifier = w3.eth.contract(address=Web3.to_checksum_address(args.verifier), abi=DSTACK_VERIFIER_ABI)
 
+_nonce = [w3.eth.get_transaction_count(deployer.address)]
+
 def send_tx(fn):
     tx = fn.build_transaction({
         'from': deployer.address,
-        'nonce': w3.eth.get_transaction_count(deployer.address),
+        'nonce': _nonce[0],
         'gas': 500000,
     })
     signed = deployer.sign_transaction(tx)
     tx_hash = w3.eth.send_raw_transaction(signed.raw_transaction)
+    _nonce[0] += 1
     receipt = w3.eth.wait_for_transaction_receipt(tx_hash)
     assert receipt['status'] == 1, f"Tx reverted: {tx_hash.hex()}"
     return tx_hash
