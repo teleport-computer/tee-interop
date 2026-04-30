@@ -54,13 +54,22 @@ CANONICAL_VERIFIER_CODE_ID = bytes.fromhex(
 
 def run_tinfoil_verifier(source: str) -> dict:
     """Invoke tools/tinfoil-verify-helper, which calls tinfoil-go's real
-    attestation.VerifyAttestationJSON(). Raises if verification fails."""
+    attestation.VerifyAttestationJSON(). Raises if verification fails.
+
+    The `source` argument either names a built-in helper mode (vendored-sev,
+    vendored-tdx, live, stdin) or uses the `host:<hostname>` form to fetch
+    /.well-known/tinfoil-attestation directly from a third-party Tinfoil
+    container deployment (the only way to verify Tinfoil-Containers — the ATC
+    bundle path is managed-inference-only)."""
     if not VERIFY_HELPER.exists():
         sys.exit(f"build the helper first: cd {VERIFY_HELPER.parent} && go build -o tinfoil-verify ./...")
-    res = subprocess.run([str(VERIFY_HELPER), "--source", source],
-                         capture_output=True, text=True, timeout=60)
+    if source.startswith("host:"):
+        argv = [str(VERIFY_HELPER), "--source", "host", "--host", source[len("host:"):]]
+    else:
+        argv = [str(VERIFY_HELPER), "--source", source]
+    res = subprocess.run(argv, capture_output=True, text=True, timeout=60)
     if res.returncode != 0:
-        raise RuntimeError(f"tinfoil-verify --source {source} failed:\n{res.stderr}")
+        raise RuntimeError(f"tinfoil-verify {argv[1:]} failed:\n{res.stderr}")
     return json.loads(res.stdout)
 
 
@@ -203,9 +212,10 @@ def main():
         # === The off-chain tinfoil-go-verifier CVM, attested by dstack ===
         verifier_app = Account.create()
         verifier_derived = Account.create()   # this is the *signer* for Tinfoil envelopes
-        # === Two target Tinfoil enclaves ===
+        # === Three target Tinfoil enclaves ===
         target_a = Account.create()
         target_b = Account.create()
+        target_c = Account.create()
 
         # === Deploy ===
         bridge_abi, bridge_bc = load_artifact("TEEBridge")
@@ -235,13 +245,22 @@ def main():
         print(f"    member = 0x{verifier_member_id.hex()[:20]}…  codeId = {CANONICAL_VERIFIER_CODE_ID.hex()[:20]}…")
 
         # === Step 2 & 3: actually verify a Tinfoil attestation, then register ===
-        # We use real tinfoil-go SEV-SNP verification (not a mock) for both targets:
+        # We use real tinfoil-go SEV-SNP verification (not a mock) for three targets:
         #   A — vendored SEV-SNP test vector (offline, deterministic)
-        #   B — live atc.tinfoil.sh attestation (real production router enclave)
+        #   B — live atc.tinfoil.sh attestation (Tinfoil-managed inference router)
+        #   C — Tinfoil-Containers third-party deploy (different product surface;
+        #       no ATC bundle, /.well-known/tinfoil-attestation directly).
+        #       Skipped automatically if TINFOIL_CONTAINER_HOST is unset, so this
+        #       file stays runnable in CI without admin-key access.
         target_specs = [
             ("A", "vendored-sev", target_a),
             ("B", "live", target_b),
         ]
+        container_host = os.environ.get("TINFOIL_CONTAINER_HOST", "")
+        if container_host:
+            target_specs.append(("C", f"host:{container_host}", target_c))
+        else:
+            print("[2.C] skipped — set TINFOIL_CONTAINER_HOST=<deploy>.containers.tinfoil.dev to enable")
         target_code_for = {}
         for label, source, target_acct in target_specs:
             print(f"\n[2.{label}] running tinfoil-go verifier ({source})...")
@@ -278,6 +297,9 @@ def main():
         member_b = Web3.solidity_keccak(["bytes"], [compressed_pubkey(target_b.key)])
         assert bridge.functions.isMember(member_a).call()
         assert bridge.functions.isMember(member_b).call()
+        if "C" in target_code_for:
+            member_c = Web3.solidity_keccak(["bytes"], [compressed_pubkey(target_c.key)])
+            assert bridge.functions.isMember(member_c).call()
 
         # === Step 4: ECIES handshake A → B ===
         secret = b"the eagle has landed at 0xCAFE"
@@ -290,6 +312,22 @@ def main():
         plaintext = ecies_decrypt(target_b.key, msgs[0][1])
         assert plaintext == secret
         print(f"    B decrypted: {plaintext!r}  ✓")
+
+        # === Step 4b: C (Tinfoil-Containers third-party deploy) shares with A ===
+        # Demonstrates the same membership primitive across a different Tinfoil
+        # surface — the third-party container product, attested via the same
+        # tinfoil-go SEV-SNP path but reached via /.well-known/tinfoil-attestation
+        # rather than the atc.tinfoil.sh bundle path.
+        if "C" in target_code_for:
+            secret_ca = b"third-party container says hi to A"
+            print(f"\n[4b] C encrypts {len(secret_ca)}B to A's pubkey...")
+            ct_ca = ecies_encrypt(compressed_pubkey(target_a.key), secret_ca)
+            send(w3, deployer, bridge.functions.onboard(member_c, member_a, ct_ca))
+            msgs_a = bridge.functions.getOnboarding(member_a).call()
+            assert len(msgs_a) == 1
+            plaintext_ca = ecies_decrypt(target_a.key, msgs_a[0][1])
+            assert plaintext_ca == secret_ca
+            print(f"    A decrypted from C: {plaintext_ca!r}  ✓")
 
         # === Negative tests ===
         print("\n[neg-1] Signer not registered → expect VerifierNotRegistered")
@@ -345,8 +383,10 @@ def main():
 
         print("\n=== TEE PROOF (ERC-733 §C) E2E PASSED ===")
         print(f"  trust chain: KMS root → DstackVerifier → tinfoil-go-verifier CVM (member)")
-        print(f"               → CVM-signed envelopes → 2 Tinfoil-attested targets")
+        print(f"               → CVM-signed envelopes → {len(target_specs)} Tinfoil-attested targets")
         print(f"  ECIES handshake: A → B  ({len(secret)}B → {len(ciphertext)}B → roundtrip ✓)")
+        if "C" in target_code_for:
+            print(f"  ECIES handshake: C → A  ({len(secret_ca)}B → roundtrip ✓)  [Tinfoil-Containers leg]")
         print(f"  negatives: not-registered ✓  wrong-code ✓  bad-binding ✓")
 
     finally:

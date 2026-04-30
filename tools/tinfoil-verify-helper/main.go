@@ -32,7 +32,8 @@ type result struct {
 }
 
 func main() {
-	source := flag.String("source", "vendored-sev", "vendored-sev | vendored-tdx | live | stdin")
+	source := flag.String("source", "vendored-sev", "vendored-sev | vendored-tdx | live | host | stdin")
+	host := flag.String("host", "", "enclave hostname (e.g. devproof-hello.andrew-miller.containers.tinfoil.dev) — used when --source=host")
 	flag.Parse()
 
 	var attJSON []byte
@@ -50,6 +51,23 @@ func main() {
 		}
 		// Re-marshal the attestation document part for VerifyAttestationJSON
 		attJSON, err = json.Marshal(bundle.EnclaveAttestationReport)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "marshal: %v\n", err)
+			os.Exit(2)
+		}
+	case "host":
+		// Tinfoil-Containers third-party deploys do not expose an ATC bundle
+		// at atc.tinfoil.sh. They serve /.well-known/tinfoil-attestation directly.
+		if *host == "" {
+			fmt.Fprintln(os.Stderr, "--source=host requires --host <hostname>")
+			os.Exit(2)
+		}
+		doc, ferr := attestation.Fetch(*host)
+		if ferr != nil {
+			fmt.Fprintf(os.Stderr, "Fetch %s: %v\n", *host, ferr)
+			os.Exit(2)
+		}
+		attJSON, err = json.Marshal(doc)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "marshal: %v\n", err)
 			os.Exit(2)

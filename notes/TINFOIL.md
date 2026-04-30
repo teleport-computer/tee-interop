@@ -73,18 +73,26 @@ directly without trusting any TEE-resident verifier. Those are open work; see
   vendored `tinfoil-go` and invokes `attestation.VerifyAttestationJSON()`.
   Sources: `--source vendored-sev` (offline, deterministic),
   `--source vendored-tdx` (currently broken — base64 corruption in const,
-  fixable), `--source live` (fetches `https://atc.tinfoil.sh/attestation`).
-  Build: `cd tools/tinfoil-verify-helper && go build -o tinfoil-verify ./...`
+  fixable), `--source live` (fetches `https://atc.tinfoil.sh/attestation`,
+  the managed-inference bundle path), `--source host --host <hostname>`
+  (fetches `/.well-known/tinfoil-attestation` directly — the only path that
+  works for Tinfoil-Containers third-party deploys, which do not publish to
+  ATC). Build: `cd tools/tinfoil-verify-helper && go build -o tinfoil-verify ./...`
 - `test_e2e_bridge_tinfoil_proof.py` — anvil e2e. Invokes the Go helper for
   each target (real cryptographic SEV-SNP verification — AMD-signed report
   walked back through the Genoa cert chain via `google/go-sev-guest`).
   Verification failure aborts before any contract call. The verified
   measurement becomes the registered `codeId`; the verified HPKE/TLS
   fingerprints are recorded in `userData`. Then registers a synthetic
-  dstack-attested verifier CVM, registers two Tinfoil targets through it,
-  exchanges an ECIES-encrypted secret, and asserts three meaningful
-  negatives (signer not registered, signer wrong codeId, sig/pubkey binding
-  mismatch).
+  dstack-attested verifier CVM, registers two-or-three Tinfoil targets
+  through it (target C is the third-party container leg, gated on the
+  `TINFOIL_CONTAINER_HOST` env var so the test stays runnable without
+  admin-key access), exchanges ECIES-encrypted secrets across legs,
+  and asserts three meaningful negatives (signer not registered, signer
+  wrong codeId, sig/pubkey binding mismatch).
+- `.github/workflows/tinfoil-leg.yml` — CI runner that executes the same e2e
+  daily and on-push, with target C pointed at a live
+  `*.containers.tinfoil.dev` deploy.
 - `test_decode_tinfoil_vectors.py` — confirms the vendored vectors decode to
   standard SEV-SNP report layout (REPORT_DATA at 0x50 = TLS FP || HPKE
   pubkey, MEASUREMENT at 0x90). Useful as a starting point for Path B/C work.
@@ -94,7 +102,8 @@ directly without trusting any TEE-resident verifier. Those are open work; see
 | Layer | Real | Mocked |
 |---|---|---|
 | SEV-SNP cryptographic verification (AMD signature, Genoa cert chain) | ✓ via `tinfoil-go` | |
-| Live production Tinfoil attestation (`atc.tinfoil.sh`) | ✓ fetched + verified | |
+| Live production Tinfoil attestation (`atc.tinfoil.sh` managed inference) | ✓ fetched + verified | |
+| Live Tinfoil-Containers third-party deploy (`*.containers.tinfoil.dev`) | ✓ fetched + verified (when `TINFOIL_CONTAINER_HOST` set) | |
 | Sigstore bundle check | | (would need `--source live` with full bundle path) |
 | dm-verity root binding | | (set to zeros in test envelopes) |
 | Verifier CVM identity (encumbered key in real dstack TEE) | | synthetic `Account.create()` |
