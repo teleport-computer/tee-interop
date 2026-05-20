@@ -1,0 +1,178 @@
+name: Verify Android Key Attestation
+
+# Trigger: a comment on a regular Issue (not a PR) whose body contains a
+# PEM-encoded cert chain. The Issue body must include a line:
+#   challenge: <utf-8 string>
+# which the device's leaf must match (setAttestationChallenge value).
+#
+# Composes two independent public-verifiability anchors:
+#   1. Android Key Attestation — the phone's chain rooted in Google's roots
+#   2. Sigstore / Fulcio via GHA OIDC — the verified record is keyless-signed
+#      by THIS workflow at THIS commit; anyone can `cosign verify-blob`
+#
+# Anyone outside this repo can re-derive both without trusting our infra.
+
+on:
+  issue_comment:
+    types: [created, edited]
+
+permissions:
+  contents: write   # commit verified record + sigstore bundle
+  issues: write     # post result comment, close issue
+  id-token: write   # mint OIDC token for Sigstore keyless signing
+
+jobs:
+  verify:
+    if: >-
+      github.event.issue.pull_request == null &&
+      contains(github.event.comment.body, '-----BEGIN CERTIFICATE-----') &&
+      github.event.comment.user.login != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python deps
+        run: pip install cryptography eth-abi
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: 'v2.4.1'
+
+      - name: Extract challenge from issue body
+        id: challenge
+        env:
+          ISSUE_BODY: ${{ github.event.issue.body }}
+        run: |
+          set -euo pipefail
+          # Look for a line `challenge: <text>` (UTF-8 string after the colon).
+          CHAL=$(printf '%s' "$ISSUE_BODY" | sed -n 's/^[Cc]hallenge:[[:space:]]*//p' | head -1 | tr -d '\r')
+          if [ -z "$CHAL" ]; then
+            echo "::error::issue body must contain a line 'challenge: <utf-8 string>'"
+            exit 1
+          fi
+          echo "Got challenge: $CHAL"
+          echo "challenge=$CHAL" >> "$GITHUB_OUTPUT"
+
+      - name: Extract PEM chain from comment
+        id: pem
+        env:
+          COMMENT_BODY: ${{ github.event.comment.body }}
+        run: |
+          set -euo pipefail
+          mkdir -p _attest
+          # Strip markdown code fences if present, then keep everything between
+          # the first BEGIN CERTIFICATE and the last END CERTIFICATE.
+          printf '%s' "$COMMENT_BODY" \
+            | sed 's/^```.*$//' \
+            | awk '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/' \
+            > _attest/chain.pem
+          if ! grep -q 'BEGIN CERTIFICATE' _attest/chain.pem; then
+            echo "::error::no PEM chain found in comment body"
+            exit 1
+          fi
+          echo "Extracted $(grep -c 'BEGIN CERTIFICATE' _attest/chain.pem) certs"
+
+      - name: Run Android Key Attestation verifier
+        run: |
+          set -euo pipefail
+          python tools/android_keyattest/verify.py \
+            _attest/chain.pem \
+            --challenge "${{ steps.challenge.outputs.challenge }}" \
+            > _attest/record.json
+          echo "--- verified record ---"
+          cat _attest/record.json
+
+      - name: Sigstore keyless sign-blob with GHA OIDC
+        run: |
+          set -euo pipefail
+          cosign sign-blob --yes \
+            --bundle _attest/record.sigstore.json \
+            --output-signature _attest/record.sig \
+            --output-certificate _attest/record.crt \
+            _attest/record.json
+          echo "--- sigstore bundle (truncated) ---"
+          head -c 800 _attest/record.sigstore.json
+          echo
+
+      - name: Compute artifact paths
+        id: paths
+        run: |
+          ISSUE=${{ github.event.issue.number }}
+          BASE=demos/android-attestations/verified/issue-${ISSUE}
+          echo "base=$BASE" >> "$GITHUB_OUTPUT"
+
+      - name: Commit verified record + bundle
+        env:
+          BASE: ${{ steps.paths.outputs.base }}
+        run: |
+          set -euo pipefail
+          mkdir -p "$(dirname "$BASE")"
+          cp _attest/record.json          "${BASE}.record.json"
+          cp _attest/record.sigstore.json "${BASE}.sigstore.json"
+          cp _attest/record.sig           "${BASE}.sig"
+          cp _attest/record.crt           "${BASE}.crt"
+          cp _attest/chain.pem            "${BASE}.chain.pem"
+
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add "${BASE}.record.json" "${BASE}.sigstore.json" "${BASE}.sig" "${BASE}.crt" "${BASE}.chain.pem"
+          git commit -m "verify android-attestation for issue #${{ github.event.issue.number }}"
+          git push
+
+      - name: Comment on issue with verified summary
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const record = JSON.parse(fs.readFileSync('_attest/record.json', 'utf8'));
+            const base = '${{ steps.paths.outputs.base }}';
+            const repo = `${context.repo.owner}/${context.repo.repo}`;
+            const sha = process.env.GITHUB_SHA;
+            const blob = (p) => `https://github.com/${repo}/blob/${sha}/${p}`;
+
+            const body = [
+              '### Android Key Attestation verified',
+              '',
+              `- securityLevel: \`${record.verified.attestationSecurityLevel}\``,
+              `- verifiedBootState: \`${record.verified.rootOfTrust?.verifiedBootState}\``,
+              `- deviceLocked: \`${record.verified.rootOfTrust?.deviceLocked}\``,
+              `- osPatchLevel: \`${record.verified.osPatchLevel}\``,
+              `- chain SHA-256: \`${record.input.chain_pem_sha256}\``,
+              `- challenge: \`${record.input.expected_challenge_utf8}\``,
+              '',
+              '#### Artifacts',
+              `- [verified record](${blob(base + '.record.json')})`,
+              `- [sigstore bundle](${blob(base + '.sigstore.json')})`,
+              `- [signature](${blob(base + '.sig')})`,
+              `- [signing cert](${blob(base + '.crt')})`,
+              `- [original PEM chain](${blob(base + '.chain.pem')})`,
+              '',
+              '#### Independently re-verify',
+              '```bash',
+              'cosign verify-blob \\',
+              '  --certificate-oidc-issuer https://token.actions.githubusercontent.com \\',
+              `  --certificate-identity-regexp "https://github.com/${repo}/.github/workflows/verify_android_attest.yml.*" \\`,
+              `  --bundle ${base}.sigstore.json \\`,
+              `  ${base}.record.json`,
+              '```',
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            });
+            await github.rest.issues.update({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              state: 'closed',
+            });
