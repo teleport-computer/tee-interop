@@ -1,32 +1,59 @@
 name: Verify Android Key Attestation
 
-# Trigger: a comment on a regular Issue (not a PR) whose body contains a
-# PEM-encoded cert chain. The Issue body must include a line:
-#   challenge: <utf-8 string>
-# which the device's leaf must match (setAttestationChallenge value).
+# Two triggers:
 #
-# Composes two independent public-verifiability anchors:
-#   1. Android Key Attestation — the phone's chain rooted in Google's roots
-#   2. Sigstore / Fulcio via GHA OIDC — the verified record is keyless-signed
-#      by THIS workflow at THIS commit; anyone can `cosign verify-blob`
+# 1. issue_comment — production flow. A user opens an Issue with a body
+#    containing  `challenge: <utf-8 string>`, then pastes a PEM cert chain
+#    as a comment. This workflow fires, verifies, sigstore-signs, commits
+#    artifacts, posts a result comment, and closes the issue.
+#    NOTE: GitHub only fires issue_comment workflows from the DEFAULT
+#    branch, so this trigger is dormant until the workflow is on main.
+#
+# 2. workflow_dispatch — testing flow. Trigger manually from the Actions
+#    UI on any branch. Inputs let you point at a PEM path that already
+#    exists in the repo (e.g., test/fixtures/pixel6_strongbox.pem) and
+#    declare the expected challenge directly. Skips the issue-comment
+#    bookkeeping.
+#
+# Composes two independent public-verifiability anchors in both modes:
+#   - Android Key Attestation — chain rooted in Google's published roots
+#   - Sigstore / Fulcio via GHA OIDC — this workflow at this commit signed
 #
 # Anyone outside this repo can re-derive both without trusting our infra.
 
 on:
   issue_comment:
     types: [created, edited]
+  workflow_dispatch:
+    inputs:
+      pem_path:
+        description: "Path within the repo to the PEM chain to verify"
+        required: true
+        type: string
+        default: "test/fixtures/pixel6_strongbox.pem"
+      challenge:
+        description: "Expected challenge string the leaf must bind"
+        required: true
+        type: string
+        default: "edge-tee-pixel6-first-attestation-20260520"
+      label:
+        description: "Short label used in committed artifact paths (e.g. 'manual-1')"
+        required: true
+        type: string
+        default: "manual-1"
 
 permissions:
   contents: write   # commit verified record + sigstore bundle
-  issues: write     # post result comment, close issue
+  issues: write     # post result comment, close issue (only for issue_comment)
   id-token: write   # mint OIDC token for Sigstore keyless signing
 
 jobs:
   verify:
     if: >-
-      github.event.issue.pull_request == null &&
-      contains(github.event.comment.body, '-----BEGIN CERTIFICATE-----') &&
-      github.event.comment.user.login != 'github-actions[bot]'
+      github.event_name == 'workflow_dispatch' ||
+      (github.event.issue.pull_request == null &&
+       contains(github.event.comment.body, '-----BEGIN CERTIFICATE-----') &&
+       github.event.comment.user.login != 'github-actions[bot]')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repo
@@ -45,30 +72,26 @@ jobs:
         with:
           cosign-release: 'v2.4.1'
 
-      - name: Extract challenge from issue body
-        id: challenge
+      - name: Stage inputs (issue_comment path)
+        if: github.event_name == 'issue_comment'
+        id: issue_inputs
         env:
           ISSUE_BODY: ${{ github.event.issue.body }}
+          COMMENT_BODY: ${{ github.event.comment.body }}
         run: |
           set -euo pipefail
-          # Look for a line `challenge: <text>` (UTF-8 string after the colon).
+          mkdir -p _attest
+          # Challenge: pluck the first 'challenge: <text>' line out of the issue body.
           CHAL=$(printf '%s' "$ISSUE_BODY" | sed -n 's/^[Cc]hallenge:[[:space:]]*//p' | head -1 | tr -d '\r')
           if [ -z "$CHAL" ]; then
             echo "::error::issue body must contain a line 'challenge: <utf-8 string>'"
             exit 1
           fi
           echo "Got challenge: $CHAL"
-          echo "challenge=$CHAL" >> "$GITHUB_OUTPUT"
+          echo "challenge=$CHAL"  >> "$GITHUB_OUTPUT"
+          echo "label=issue-${{ github.event.issue.number }}" >> "$GITHUB_OUTPUT"
 
-      - name: Extract PEM chain from comment
-        id: pem
-        env:
-          COMMENT_BODY: ${{ github.event.comment.body }}
-        run: |
-          set -euo pipefail
-          mkdir -p _attest
-          # Strip markdown code fences if present, then keep everything between
-          # the first BEGIN CERTIFICATE and the last END CERTIFICATE.
+          # PEM: strip code fences, keep just BEGIN..END blocks.
           printf '%s' "$COMMENT_BODY" \
             | sed 's/^```.*$//' \
             | awk '/-----BEGIN CERTIFICATE-----/,/-----END CERTIFICATE-----/' \
@@ -77,14 +100,39 @@ jobs:
             echo "::error::no PEM chain found in comment body"
             exit 1
           fi
-          echo "Extracted $(grep -c 'BEGIN CERTIFICATE' _attest/chain.pem) certs"
+          echo "pem_path=_attest/chain.pem" >> "$GITHUB_OUTPUT"
+
+      - name: Stage inputs (workflow_dispatch path)
+        if: github.event_name == 'workflow_dispatch'
+        id: dispatch_inputs
+        run: |
+          set -euo pipefail
+          mkdir -p _attest
+          cp "${{ inputs.pem_path }}" _attest/chain.pem
+          echo "Using ${{ inputs.pem_path }} ($(wc -c <_attest/chain.pem) bytes)"
+          echo "challenge=${{ inputs.challenge }}" >> "$GITHUB_OUTPUT"
+          echo "label=${{ inputs.label }}"        >> "$GITHUB_OUTPUT"
+          echo "pem_path=_attest/chain.pem"       >> "$GITHUB_OUTPUT"
+
+      - name: Compute effective inputs
+        id: ins
+        run: |
+          if [ "${{ github.event_name }}" = "issue_comment" ]; then
+            echo "challenge=${{ steps.issue_inputs.outputs.challenge }}"     >> "$GITHUB_OUTPUT"
+            echo "label=${{ steps.issue_inputs.outputs.label }}"             >> "$GITHUB_OUTPUT"
+            echo "pem_path=${{ steps.issue_inputs.outputs.pem_path }}"       >> "$GITHUB_OUTPUT"
+          else
+            echo "challenge=${{ steps.dispatch_inputs.outputs.challenge }}"  >> "$GITHUB_OUTPUT"
+            echo "label=${{ steps.dispatch_inputs.outputs.label }}"          >> "$GITHUB_OUTPUT"
+            echo "pem_path=${{ steps.dispatch_inputs.outputs.pem_path }}"    >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Run Android Key Attestation verifier
         run: |
           set -euo pipefail
           python tools/android_keyattest/verify.py \
-            _attest/chain.pem \
-            --challenge "${{ steps.challenge.outputs.challenge }}" \
+            "${{ steps.ins.outputs.pem_path }}" \
+            --challenge "${{ steps.ins.outputs.challenge }}" \
             > _attest/record.json
           echo "--- verified record ---"
           cat _attest/record.json
@@ -101,16 +149,10 @@ jobs:
           head -c 800 _attest/record.sigstore.json
           echo
 
-      - name: Compute artifact paths
-        id: paths
-        run: |
-          ISSUE=${{ github.event.issue.number }}
-          BASE=demos/android-attestations/verified/issue-${ISSUE}
-          echo "base=$BASE" >> "$GITHUB_OUTPUT"
-
       - name: Commit verified record + bundle
         env:
-          BASE: ${{ steps.paths.outputs.base }}
+          BASE: demos/android-attestations/verified/${{ steps.ins.outputs.label }}
+          PEM:  ${{ steps.ins.outputs.pem_path }}
         run: |
           set -euo pipefail
           mkdir -p "$(dirname "$BASE")"
@@ -118,21 +160,23 @@ jobs:
           cp _attest/record.sigstore.json "${BASE}.sigstore.json"
           cp _attest/record.sig           "${BASE}.sig"
           cp _attest/record.crt           "${BASE}.crt"
-          cp _attest/chain.pem            "${BASE}.chain.pem"
+          cp "$PEM"                       "${BASE}.chain.pem"
 
           git config user.name 'github-actions[bot]'
           git config user.email 'github-actions[bot]@users.noreply.github.com'
           git add "${BASE}.record.json" "${BASE}.sigstore.json" "${BASE}.sig" "${BASE}.crt" "${BASE}.chain.pem"
-          git commit -m "verify android-attestation for issue #${{ github.event.issue.number }}"
+          git commit -m "verify android-attestation (${{ steps.ins.outputs.label }})"
           git push
 
       - name: Comment on issue with verified summary
+        if: github.event_name == 'issue_comment'
         uses: actions/github-script@v7
         with:
           script: |
             const fs = require('fs');
             const record = JSON.parse(fs.readFileSync('_attest/record.json', 'utf8'));
-            const base = '${{ steps.paths.outputs.base }}';
+            const label = '${{ steps.ins.outputs.label }}';
+            const base = `demos/android-attestations/verified/${label}`;
             const repo = `${context.repo.owner}/${context.repo.repo}`;
             const sha = process.env.GITHUB_SHA;
             const blob = (p) => `https://github.com/${repo}/blob/${sha}/${p}`;
