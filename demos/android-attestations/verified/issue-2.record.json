@@ -1,0 +1,38 @@
+{
+  "schema": "edge-tee/android-attestation-verified/v1",
+  "verifier": {
+    "repo": "teleport-computer/tee-interop",
+    "ref": "refs/heads/main",
+    "sha": "c33ccd0e7b3ffa5a1f0bfa1e4669429fded3926d",
+    "run_id": "26195149937",
+    "run_attempt": "1",
+    "actor": "amiller"
+  },
+  "input": {
+    "chain_pem_sha256": "0279b79935c4dc0fe8e5e547a01f85f58a087e93e3d14148f11a3bf26be18226",
+    "chain_length": 4,
+    "root_cert_subject": "2.5.4.5=f92009e853b6b045",
+    "expected_challenge_utf8": "edge-tee-pixel6-first-attestation-20260520",
+    "expected_challenge_b64": "ZWRnZS10ZWUtcGl4ZWw2LWZpcnN0LWF0dGVzdGF0aW9uLTIwMjYwNTIw"
+  },
+  "verified": {
+    "attestationSecurityLevel": "StrongBox",
+    "keyMintSecurityLevel": "StrongBox",
+    "rootOfTrust": {
+      "verifiedBootKey": "D251yAGDtd7AdLAFTUJx6ZOJ6+SxNrCBneHxULoP+dc=",
+      "deviceLocked": true,
+      "verifiedBootState": "Verified",
+      "verifiedBootHash": "zDwOSraSacaazqWnxXj6Uxw+0N/PNZQnjmMt3jiwG78="
+    },
+    "osVersion": 160000,
+    "osPatchLevel": 202604,
+    "vendorPatchLevel": 20260405,
+    "bootPatchLevel": 20260405,
+    "attestationIdBrand": null,
+    "attestationIdModel": null,
+    "attestationApplicationId": {
+      "signature_digest_sha256_b64": "YBhQ2TDOcBMm9Ka2crO6nrqLqKQWT6F05fuvRd85iTk="
+    },
+    "leafPubkeySpkiB64": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAE6Sbtlg1LNwkHXIY4kVpVhLl/xO+rVlIEsh8uQApaCwcJioZm9VqSsrFiL+RZMKsSFut4L+p8CfU1DoAdbSr5Qw=="
+  }
+}
