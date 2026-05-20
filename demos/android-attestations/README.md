@@ -34,7 +34,7 @@ verified/
 ```bash
 cosign verify-blob \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-  --certificate-identity-regexp "https://github.com/Account-Link/tee-interop/.github/workflows/verify_android_attest.yml.*" \
+  --certificate-identity-regexp "https://github.com/teleport-computer/tee-interop/.github/workflows/verify_android_attest.yml.*" \
   --bundle verified/issue-N.sigstore.json \
   verified/issue-N.record.json
 ```
