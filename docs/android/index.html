@@ -128,19 +128,30 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
     </div>
 </div>
 
-<h2>Architecture</h2>
+<h2>What you can check yourself</h2>
 <div class="architecture">
     <div class="archcard">
-        <div class="t">Policy on-chain</div>
-        <div class="b">Pinned root set is governance state. Owner adds / removes Google attestation roots via cheap txs.</div>
+        <div class="t">Policy lives in <code>allowedRootFingerprints</code></div>
+        <div class="b">
+            Owner is <a href="https://sepolia.basescan.org/address/0x5A370b73385085091de23E0fD21B54F2724EAD8D" target="_blank" rel="noopener">0x5A37…AD8D</a>; only they can call <code>addRoot</code> / <code>removeRoot</code>. Query any pin yourself via
+            <a href="https://sepolia.basescan.org/address/0x82e52495773245d5246f55dbba9cc3149cf57644#readContract" target="_blank" rel="noopener">BaseScan Read Contract</a>
+            → <code>allowedRootFingerprints(bytes32) → bool</code>.
+            The pinned-root pill above runs that exact call every 12 s.
+        </div>
     </div>
     <div class="archcard">
-        <div class="t">Verification view-only</div>
-        <div class="b">verify(proof) runs the full ECDSA-P256 + ECDSA-P384 + RSA-PKCS1v15 + DER chain inside the EVM. ~50M gas — but it's a view call, so no gas cap.</div>
+        <div class="t"><code>verify(bytes)</code> is <code>view</code></div>
+        <div class="b">
+            Marked <code>view</code> in
+            <a href="https://github.com/teleport-computer/tee-interop/blob/main/contracts/AndroidKeyAttestationVerifier.sol" target="_blank" rel="noopener">AndroidKeyAttestationVerifier.sol</a>.
+            Same code path costs ~50M gas if called as a state-changing tx (measured via <code>cast estimate</code>) — over Base's 16.7M per-tx cap. As a view call it has no cap and is deterministic: same proof bytes → same <code>(codeId, pubkey, challenge)</code> tuple every time, for everyone.
+        </div>
     </div>
     <div class="archcard">
-        <div class="t">Secret exchange off-chain</div>
-        <div class="b">Two attested parties verify each other's proofs as view calls, then ECDH using the attested pubkeys. No on-chain state writes needed for pairing.</div>
+        <div class="t">Pubkey is bound to the challenge <span class="pill warn" style="vertical-align:middle">pattern</span></div>
+        <div class="b">
+            Each attestation binds the leaf's EC pubkey to a caller-supplied challenge inside the signed StrongBox cert. Two attested parties can use that to ECDH off-chain without an on-chain handshake. <b>Not yet demoed end-to-end here</b> — only the verifier side is live; the pairing flow is the next demo.
+        </div>
     </div>
 </div>
 
