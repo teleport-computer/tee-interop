@@ -1,0 +1,142 @@
+name: Pair with captured Pixel 6 (encrypt secret to attested pubkey)
+
+# End-to-end pairing demo.
+#
+# This workflow runs entirely on a GitHub-hosted ubuntu-latest runner whose
+# OIDC identity is anchored in Fulcio via Sigstore. It:
+#   1. Reads a captured Android Key Attestation chain from the repo.
+#   2. Verifies the chain locally (tools/android_keyattest/verify.py).
+#   3. ECIES-P256 encrypts a fresh random 32-byte secret to the attested
+#      leaf pubkey. The ephemeral private key is destroyed when the runner
+#      tears down — only the Pixel device whose StrongBox holds the matching
+#      private key can recover the plaintext.
+#   4. `cosign sign-blob --yes` signs the encryption bundle with the GHA OIDC
+#      identity. Anyone can verify "this workflow at this commit produced
+#      this ciphertext" without trusting our infra.
+#   5. Commits the bundle + Sigstore artifacts + a `latest.json` pointer
+#      under demos/android-pairings/.
+#
+# Two independent public-verifiability anchors are composed end to end:
+#   - Android Key Attestation : chain rooted in Google Hardware Attestation Root
+#   - Sigstore / Fulcio via GHA OIDC : the workflow that built the ciphertext
+
+on:
+  workflow_dispatch:
+    inputs:
+      pem_path:
+        description: "PEM cert chain (leaf-first) to pair with"
+        required: true
+        type: string
+        default: "test/fixtures/pixel6_strongbox.pem"
+      challenge:
+        description: "Expected challenge the leaf must bind"
+        required: true
+        type: string
+        default: "edge-tee-pixel6-first-attestation-20260520"
+      label:
+        description: "Short label used in committed artifact paths"
+        required: true
+        type: string
+        default: "manual"
+
+permissions:
+  contents: write
+  id-token: write
+
+jobs:
+  pair:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python deps
+        run: pip install cryptography eth-abi
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: 'v2.4.1'
+
+      - name: Verify the attestation chain locally
+        run: |
+          set -euo pipefail
+          mkdir -p _pair
+          cp "${{ inputs.pem_path }}" _pair/chain.pem
+          python tools/android_keyattest/verify.py \
+            _pair/chain.pem \
+            --challenge "${{ inputs.challenge }}" \
+            > _pair/record.json
+          echo "--- verified record (truncated) ---"
+          python -c "import json; d=json.load(open('_pair/record.json')); print(json.dumps({k:v for k,v in d.items() if k!='input'}, indent=2)[:1500])"
+
+      - name: ECIES-encrypt a fresh secret to the attested pubkey
+        run: |
+          set -euo pipefail
+          META=$(python -c "import json,os; print(json.dumps({'workflow_run_id': os.environ['GITHUB_RUN_ID'], 'commit_sha': os.environ['GITHUB_SHA'], 'workflow_ref': os.environ['GITHUB_WORKFLOW_REF'], 'created_at_utc': __import__('datetime').datetime.utcnow().isoformat()+'Z'}))")
+          python tools/android_keyattest/encrypt_to_attested.py \
+            _pair/chain.pem \
+            --out _pair/bundle.json \
+            --metadata "$META"
+          echo "--- bundle (truncated) ---"
+          python -c "import json; d=json.load(open('_pair/bundle.json')); [print(f'{k}: {str(v)[:80]}{\"…\" if len(str(v))>80 else \"\"}') for k,v in d.items()]"
+
+      - name: Sigstore sign the pairing bundle
+        run: |
+          set -euo pipefail
+          cosign sign-blob --yes \
+            --bundle _pair/bundle.sigstore.json \
+            --output-signature _pair/bundle.sig \
+            --output-certificate _pair/bundle.crt \
+            _pair/bundle.json
+          echo "--- sigstore bundle (head) ---"
+          head -c 500 _pair/bundle.sigstore.json
+          echo
+
+      - name: Commit pairing artifacts
+        env:
+          BASE: demos/android-pairings/${{ inputs.label }}-${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          mkdir -p demos/android-pairings
+          cp _pair/bundle.json          "${BASE}.bundle.json"
+          cp _pair/bundle.sigstore.json "${BASE}.sigstore.json"
+          cp _pair/bundle.sig           "${BASE}.sig"
+          cp _pair/bundle.crt           "${BASE}.crt"
+          cp _pair/chain.pem            "${BASE}.chain.pem"
+
+          # Update a stable `latest.json` pointer the dashboard can fetch.
+          python - <<'PY'
+          import json, os
+          base = "demos/android-pairings/${{ inputs.label }}-${{ github.run_id }}"
+          latest = {
+              "label": "${{ inputs.label }}",
+              "run_id": "${{ github.run_id }}",
+              "commit": "${{ github.sha }}",
+              "workflow": "${{ github.workflow }}",
+              "workflow_ref": "${{ github.workflow_ref }}",
+              "bundle_url":  "https://raw.githubusercontent.com/${{ github.repository }}/main/" + base + ".bundle.json",
+              "sigstore_url":"https://raw.githubusercontent.com/${{ github.repository }}/main/" + base + ".sigstore.json",
+              "chain_url":   "https://raw.githubusercontent.com/${{ github.repository }}/main/" + base + ".chain.pem",
+          }
+          open("demos/android-pairings/latest.json","w").write(json.dumps(latest, indent=2))
+          PY
+
+          git config user.name 'github-actions[bot]'
+          git config user.email 'github-actions[bot]@users.noreply.github.com'
+          git add demos/android-pairings/
+          git commit -m "pair with android attestation (${{ inputs.label }}-${{ github.run_id }})"
+          git push
+
+      - name: Summary
+        run: |
+          echo "::notice::Pairing bundle committed under demos/android-pairings/"
+          echo "::notice::Re-verify with:"
+          echo "::notice::  cosign verify-blob \\"
+          echo "::notice::    --certificate-oidc-issuer https://token.actions.githubusercontent.com \\"
+          echo "::notice::    --certificate-identity-regexp \"https://github.com/${{ github.repository }}/.github/workflows/pair_with_pixel6.yml.*\" \\"
+          echo "::notice::    --bundle demos/android-pairings/${{ inputs.label }}-${{ github.run_id }}.sigstore.json \\"
+          echo "::notice::    demos/android-pairings/${{ inputs.label }}-${{ github.run_id }}.bundle.json"
