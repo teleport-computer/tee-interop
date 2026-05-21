@@ -1,0 +1,10 @@
+{
+  "label": "manual",
+  "run_id": "26243062126",
+  "commit": "fbd3b3a00d5381f6e71c350fa9d87013e2b2f01f",
+  "workflow": "Pair with captured Pixel 6 (encrypt secret to attested pubkey)",
+  "workflow_ref": "teleport-computer/tee-interop/.github/workflows/pair_with_pixel6.yml@refs/heads/main",
+  "bundle_url": "https://raw.githubusercontent.com/teleport-computer/tee-interop/main/demos/android-pairings/manual-26243062126.bundle.json",
+  "sigstore_url": "https://raw.githubusercontent.com/teleport-computer/tee-interop/main/demos/android-pairings/manual-26243062126.sigstore.json",
+  "chain_url": "https://raw.githubusercontent.com/teleport-computer/tee-interop/main/demos/android-pairings/manual-26243062126.chain.pem"
+}
