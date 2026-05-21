@@ -1,0 +1,332 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>TEE Interop · Android Key Attestation Verifier (Base Sepolia)</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root {
+    --bg: #0c0d10;
+    --panel: #15171c;
+    --border: #2a2d36;
+    --text: #e6e6e8;
+    --dim: #8b8d96;
+    --accent: #6fcf97;
+    --warn: #f5a623;
+    --bad: #eb5757;
+    --link: #4ea4ff;
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0; padding: 24px;
+    background: var(--bg); color: var(--text);
+    font: 14px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+    max-width: 980px; margin-inline: auto;
+}
+h1 { font-size: 18px; margin: 0 0 4px; font-weight: 600; }
+h2 { font-size: 13px; margin: 24px 0 8px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
+.sub { color: var(--dim); margin-bottom: 24px; }
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 16px; margin-bottom: 16px; }
+.row { display: flex; gap: 12px; align-items: baseline; padding: 4px 0; }
+.row .k { color: var(--dim); min-width: 130px; flex-shrink: 0; }
+.row .v { color: var(--text); word-break: break-all; }
+.row .v.mono { font-family: inherit; }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+button {
+    background: var(--accent); color: #0c0d10; border: 0; padding: 10px 16px;
+    font: 600 14px ui-monospace, monospace; border-radius: 4px; cursor: pointer;
+}
+button:hover { filter: brightness(1.1); }
+button:disabled { opacity: 0.5; cursor: progress; }
+textarea, input[type=text] {
+    width: 100%; background: #0c0d10; color: var(--text);
+    border: 1px solid var(--border); border-radius: 4px; padding: 10px;
+    font: 13px/1.4 ui-monospace, monospace;
+}
+textarea { min-height: 220px; resize: vertical; }
+label { display: block; color: var(--dim); margin: 10px 0 4px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.06em; }
+.result-ok { color: var(--accent); font-weight: 600; }
+.result-bad { color: var(--bad); font-weight: 600; }
+.result-pending { color: var(--warn); font-weight: 600; }
+.muted { color: var(--dim); }
+.hex { font-family: inherit; word-break: break-all; }
+.note { font-size: 12px; color: var(--dim); margin-top: 8px; line-height: 1.6; }
+.pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #1a3024; color: var(--accent); font-size: 11px; font-weight: 600; margin-left: 6px; }
+.pill.bad { background: #3a1818; color: var(--bad); }
+.pill.warn { background: #3a2c10; color: var(--warn); }
+hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
+.architecture { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px; margin: 8px 0; }
+.archcard { background: #0c0d10; border: 1px solid var(--border); border-radius: 4px; padding: 10px; }
+.archcard .t { font-weight: 600; margin-bottom: 4px; color: var(--accent); font-size: 12px; }
+.archcard .b { color: var(--dim); font-size: 11px; line-height: 1.5; }
+@media (max-width: 720px) { .architecture { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<h1>Android Key Attestation Verifier</h1>
+<div class="sub">Live on Base Sepolia. Anyone can re-verify any Pixel attestation by view-calling the deployed contract.</div>
+
+<div class="panel" id="netpanel">
+    <div class="row"><div class="k">Network</div><div class="v">Base Sepolia · chain 84532</div></div>
+    <div class="row"><div class="k">Verifier</div>
+        <div class="v"><a href="https://sepolia.basescan.org/address/0x82e52495773245d5246f55dbba9cc3149cf57644" target="_blank" rel="noopener">0x82e52495773245d5246f55dbba9cc3149cf57644</a></div>
+    </div>
+    <div class="row"><div class="k">P256 backend</div>
+        <div class="v"><a href="https://sepolia.basescan.org/address/0x383f8d39fb6ca98f544130b425dfdd7e94c98955" target="_blank" rel="noopener">0x383f8d39fb6ca98f544130b425dfdd7e94c98955</a></div>
+    </div>
+    <div class="row"><div class="k">Pinned root</div>
+        <div class="v" id="rootStatus"><span class="muted">0xc1984a3ef45c1e2a918551de10603c86f7051b2249c4891cae3230eabd0c97d5</span><span class="pill" id="rootPill">checking…</span></div>
+    </div>
+    <div class="row"><div class="k">Latest block</div><div class="v" id="blockNum">…</div></div>
+</div>
+
+<h2>Architecture</h2>
+<div class="architecture">
+    <div class="archcard">
+        <div class="t">Policy on-chain</div>
+        <div class="b">Pinned root set is governance state. Owner adds / removes Google attestation roots via cheap txs.</div>
+    </div>
+    <div class="archcard">
+        <div class="t">Verification view-only</div>
+        <div class="b">verify(proof) runs the full ECDSA-P256 + ECDSA-P384 + RSA-PKCS1v15 + DER chain inside the EVM. ~50M gas — but it's a view call, so no gas cap.</div>
+    </div>
+    <div class="archcard">
+        <div class="t">Secret exchange off-chain</div>
+        <div class="b">Two attested parties verify each other's proofs as view calls, then ECDH using the attested pubkeys. No on-chain state writes needed for pairing.</div>
+    </div>
+</div>
+
+<h2>Re-verify an attestation</h2>
+<div class="panel">
+    <label for="pem">PEM cert chain (leaf-first)</label>
+    <textarea id="pem" spellcheck="false"></textarea>
+    <label for="challenge">Expected attestation challenge (the bytes the device was asked to sign over)</label>
+    <input type="text" id="challenge" />
+    <div style="margin-top:14px;">
+        <button id="verifyBtn">Verify on-chain</button>
+        <span style="margin-left:12px;" id="status" class="muted"></span>
+    </div>
+    <div class="note">
+        Re-verification is a stateless <code>eth_call</code> against the Base Sepolia verifier. The proof bytes never leave your browser before being submitted to the public RPC. The verifier returns (codeId, leafDer, challenge) iff the chain signatures + root pin + policy all pass.
+    </div>
+</div>
+
+<div class="panel" id="resultPanel" style="display:none;">
+    <h2 style="margin-top:0">Result</h2>
+    <div class="row"><div class="k">Status</div><div class="v" id="resStatus"></div></div>
+    <div class="row"><div class="k">codeId</div><div class="v hex" id="resCodeId"></div></div>
+    <div class="row"><div class="k">pubkey (leaf DER)</div><div class="v hex" id="resPubkey"></div></div>
+    <div class="row"><div class="k">challenge (decoded)</div><div class="v" id="resChallengeText"></div></div>
+    <div class="row"><div class="k">challenge (hex)</div><div class="v hex" id="resChallengeHex"></div></div>
+    <hr>
+    <div class="note">
+        <b>codeId</b> = keccak256 of the leaf cert. Stable per device per attestation. <b>pubkey</b> = leaf cert DER (~700 bytes; SPKI inside binds the per-attestation EC pubkey). <b>challenge</b> = the bytes the StrongBox signed over — bind your own session keys here for pairing.
+    </div>
+</div>
+
+<h2>What's actually happening</h2>
+<div class="panel" style="line-height:1.7;">
+    Each chain link is verified inside the EVM:
+    <ul style="margin:8px 0 8px 20px; padding:0;">
+        <li>leaf → cert1 : ECDSA-P256-SHA256 (via vendored daimo P256Verifier)</li>
+        <li>cert1 → cert2 : ECDSA-P384-SHA256 (ported from estid-sig P-384 / Estonian e-ID)</li>
+        <li>cert2 → root : RSA-PKCS1v15-SHA256 (via modexp precompile)</li>
+        <li>root : SHA-256 pin in <code>allowedRootFingerprints</code></li>
+    </ul>
+    Plus on-chain DER parsing of the leaf to recover (challenge, deviceLocked, verifiedBootState) from the Android Key Attestation extension at OID 1.3.6.1.4.1.11129.2.1.17. Source: <a href="https://github.com/teleport-computer/tee-interop" target="_blank">teleport-computer/tee-interop</a>.
+</div>
+
+<script type="module">
+import { JsonRpcProvider, Contract, AbiCoder, getBytes, hexlify, toUtf8Bytes, toUtf8String } from "https://esm.sh/ethers@6.13.0";
+
+const RPC = "https://sepolia.base.org";
+const VERIFIER = "0x82e52495773245d5246f55dbba9cc3149cf57644";
+const ROOT_FP  = "0xc1984a3ef45c1e2a918551de10603c86f7051b2249c4891cae3230eabd0c97d5";
+
+const ABI = [
+  "function verify(bytes proof) view returns (bytes32 codeId, bytes pubkey, bytes userData)",
+  "function allowedRootFingerprints(bytes32) view returns (bool)"
+];
+
+const provider = new JsonRpcProvider(RPC);
+const verifier = new Contract(VERIFIER, ABI, provider);
+
+const $ = (id) => document.getElementById(id);
+
+const EXAMPLE_CHALLENGE = "edge-tee-pixel6-first-attestation-20260520";
+const EXAMPLE_PEM = `-----BEGIN CERTIFICATE-----
+MIICszCCAlmgAwIBAgIBATAKBggqhkjOPQQDAjA/MRIwEAYDVQQMDAlTdHJvbmdC
+b3gxKTAnBgNVBAUTIDA2ODQyZjg0YmNiYWRiZDE5NjQwNWJmZDZhNjM0OWViMB4X
+DTcwMDEwMTAwMDAwMFoXDTQ4MDEwMTAwMDAwMFowHzEdMBsGA1UEAxMUQW5kcm9p
+ZCBLZXlzdG9yZSBLZXkwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATpJu2WDUs3
+CQdchjiRWlWEuX/E76tWUgSyHy5ACloLBwmKhmb1WpKysWIv5FkwqxIW63gv6nwJ
+9TUOgB1tKvlDo4IBZDCCAWAwDgYDVR0PAQH/BAQDAgeAMIIBTAYKKwYBBAHWeQIB
+EQSCATwwggE4AgIBLAoBAgICASwKAQIEKmVkZ2UtdGVlLXBpeGVsNi1maXJzdC1h
+dHRlc3RhdGlvbi0yMDI2MDUyMAQAMFO/hT0IAgYBnkd7cfq/hUVDBEEwPzEZMBcE
+EmNvbS5lZGdldGVlLmF0dGVzdAIBADEiBCBgGFDZMM5wEyb0prZys7qeuouopBZP
+oXTl+69F3zmJOTCBpKEIMQYCAQICAQOiAwIBA6MEAgIBAKUFMQMCAQSqAwIBAb+D
+dwIFAL+FPgMCAQC/hUBMMEoEIA9udcgBg7XewHSwBU1CcemTievksTawgZ3h8VC6
+D/nXAQH/CgEABCDMPA5KtpJpxprOpafFePpTHD7Q3881lCeOYy3eOLAbv7+FQQUC
+AwJxAL+FQgUCAwMXbL+FTgYCBAE1JjW/hU8GAgQBNSY1MAoGCCqGSM49BAMCA0gA
+MEUCIA7qft7Tl/pcu8XmPMqsywIT/0jr9JjUZiH9lTw5bmKcAiEA1fU4ma8T0iG0
+SRpRnNO1ThvoOThXFU7mWmtW2r31n7Y=
+-----END CERTIFICATE-----
+-----BEGIN CERTIFICATE-----
+MIICADCCAYWgAwIBAgIQVpokAbqSODCb2sAGwqwlHTAKBggqhkjOPQQDAjA/MRIw
+EAYDVQQMDAlTdHJvbmdCb3gxKTAnBgNVBAUTIGYzZGYxOTdiMTQxYzkzNDdjN2Rh
+ZjAzNzVlYzBmOTQ5MB4XDTIwMDkxMTE4MDI0NFoXDTMwMDkwOTE4MDI0NFowPzES
+MBAGA1UEDAwJU3Ryb25nQm94MSkwJwYDVQQFEyAwNjg0MmY4NGJjYmFkYmQxOTY0
+MDViZmQ2YTYzNDllYjBZMBMGByqGSM49AgEGCCqGSM49AwEHA0IABDmYmvJ55PRA
+ZABxF0WLxqMrTVYFZPBbqDomRAAEhhOTZTNx8rxaMPXVPpaLYvnNUE5pX/NS5NBs
+SlI8iORw/pujYzBhMB0GA1UdDgQWBBRRJG6wMccStm7GLMxYkLTeG74jSTAfBgNV
+HSMEGDAWgBRu5hHfcEbVuzRtjS2OBjcfUnGrTTAPBgNVHRMBAf8EBTADAQH/MA4G
+A1UdDwEB/wQEAwICBDAKBggqhkjOPQQDAgNpADBmAjEA7t9apSnOE6WgDTWRmkbr
+zswZrmONiQfV6KKmOUNkB7Sz9Zkd6NwlT5AJuq2Fno2HAjEAul3OMVL2XjXKqAoR
+HXpC3Xqg1sBGAfeBq+1iT0W6hBNjGpHj9rl9mQqwO6s5Km9j
+-----END CERTIFICATE-----
+-----BEGIN CERTIFICATE-----
+MIIDmTCCAYGgAwIBAgIQBg2Ja9xgpXallHvgiV9ZiTANBgkqhkiG9w0BAQsFADAb
+MRkwFwYDVQQFExBmOTIwMDllODUzYjZiMDQ1MB4XDTIwMDkxMTE4MDIyMVoXDTMw
+MDkwOTE4MDIyMVowPzESMBAGA1UEDAwJU3Ryb25nQm94MSkwJwYDVQQFEyBmM2Rm
+MTk3YjE0MWM5MzQ3YzdkYWYwMzc1ZWMwZjk0OTB2MBAGByqGSM49AgEGBSuBBAAi
+A2IABHJGYGgFBHogBxkYllZN3Ckx4N40qmD72LhOxrVE73IqhDuP7naPKmEdfcF4
+U4lzb/FzFPZ/fsHmSE/DSwHoST3AxQwq9g0xx/m1p/aWPVq8Rco2uhSgsnLMbGz2
+8V6jY6NjMGEwHQYDVR0OBBYEFG7mEd9wRtW7NG2NLY4GNx9ScatNMB8GA1UdIwQY
+MBaAFDZh4QB8iAUJUYtEbEf/GkzJ6k8SMA8GA1UdEwEB/wQFMAMBAf8wDgYDVR0P
+AQH/BAQDAgIEMA0GCSqGSIb3DQEBCwUAA4ICAQA4KNgGY+XZsN9BgD53T//kTlya
+sN6bBnyajVac3O9pvYgLarushTyz8xfbtio3WEy5484QiWKhXbVTGFjt9XeH0drH
+e2dYBKroYxWGsI0NdY3trA1uMx80oWhvEuFxvAQHV//UHd0YQCVuXjDQTP8Fdr8n
+8eYPBd5fxQol+pWY0UjbPgpf3Pz5KkJBEp5aijoLurlANL11d1pX8fotCCLhh0/Q
+ArmFbAxTOQrCIRI+2yX0D1DwazeWrZLSD/hPkM1/uEmleE45XEUXy2MLdixtEiI6
+yy+A/wQMizMoVhVuXVUZZiDLHPtNTjxQs5ZXDyDyxpJa0X5WckbttqRuEgd6iMWV
+hhMatfV7e8jXmt72BJzSZWOAf2hU2Xes6oIGjFah6AIFcMoqKfBzClrEbkiES+qL
+SXuBjDNkI3jXcU775OI/Q+gK19yDtzR+wl1uP8ivGnRixTc96r/i4AwTyiijvWW6
+QQcKAwTJSniD5LS5V/jB5ml6oX26fFhQteRPAsLXQfD11adkh7suquWL3ZV1GNSH
++89rbGtO1wSl98cHnUu30dXSxHBAPK+N3S7sz8YaM1CBpb4eUCj6ASR6Hr/UxW9G
+EnajLq2KPYf8MqG0ECgxQf9PDBBkTnZfFMRs4/FNtaUu10dOjj7ltEfrS0rHjgYE
+ykrM9WmORlkUk9NsoQ==
+-----END CERTIFICATE-----
+-----BEGIN CERTIFICATE-----
+MIIFYDCCA0igAwIBAgIJAOj6GWMU0voYMA0GCSqGSIb3DQEBCwUAMBsxGTAXBgNV
+BAUTEGY5MjAwOWU4NTNiNmIwNDUwHhcNMTYwNTI2MTYyODUyWhcNMjYwNTI0MTYy
+ODUyWjAbMRkwFwYDVQQFExBmOTIwMDllODUzYjZiMDQ1MIICIjANBgkqhkiG9w0B
+AQEFAAOCAg8AMIICCgKCAgEAr7bHgiuxpwHsK7Qui8xUFmOr75gvMsd/dTEDDJdS
+Sxtf6An7xyqpRR90PL2abxM1dEqlXnf2tqw1Ne4Xwl5jlRfdnJLmN0pTy/4lj4/7
+tv0Sk3iiKkypnEUtR6WfMgH0QZfKHM1+di+y9TFRtv6y//0rb+T+W8a9nsNL/ggj
+nar86461qO0rOs2cXjp3kOG1FEJ5MVmFmBGtnrKpa73XpXyTqRxB/M0n1n/W9nGq
+C4FSYa04T6N5RIZGBN2z2MT5IKGbFlbC8UrW0DxW7AYImQQcHtGl/m00QLVWutHQ
+oVJYnFPlXTcHYvASLu+RhhsbDmxMgJJ0mcDpvsC4PjvB+TxywElgS70vE0XmLD+O
+JtvsBslHZvPBKCOdT0MS+tgSOIfga+z1Z1g7+DVagf7quvmag8jfPioyKvxnK/Eg
+sTUVi2ghzq8wm27ud/mIM7AY2qEORR8Go3TVB4HzWQgpZrt3i5MIlCaY504LzSRi
+igHCzAPlHws+W0rB5N+er5/2pJKnfBSDiCiFAVtCLOZ7gLiMm0jhO2B6tUXHI/+M
+RPjy02i59lINMRRev56GKtcd9qO/0kUJWdZTdA2XoS82ixPvZtXQpUpuL12ab+9E
+aDK8Z4RHJYYfCT3Q5vNAXaiWQ+8PTWm2QgBR/bkwSWc+NpUFgNPN9PvQi8WEg5Um
+AGMCAwEAAaOBpjCBozAdBgNVHQ4EFgQUNmHhAHyIBQlRi0RsR/8aTMnqTxIwHwYD
+VR0jBBgwFoAUNmHhAHyIBQlRi0RsR/8aTMnqTxIwDwYDVR0TAQH/BAUwAwEB/zAO
+BgNVHQ8BAf8EBAMCAYYwQAYDVR0fBDkwNzA1oDOgMYYvaHR0cHM6Ly9hbmRyb2lk
+Lmdvb2dsZWFwaXMuY29tL2F0dGVzdGF0aW9uL2NybC8wDQYJKoZIhvcNAQELBQAD
+ggIBACDIw41L3KlXG0aMiS//cqrG+EShHUGo8HNsw30W1kJtjn6UBwRM6jnmiwfB
+Pb8VA91chb2vssAtX2zbTvqBJ9+LBPGCdw/E53Rbf86qhxKaiAHOjpvAy5Y3m00m
+qC0w/Zwvju1twb4vhLaJ5NkUJYsUS7rmJKHHBnETLi8GFqiEsqTWpG/6ibYCv7rY
+DBJDcR9W62BW9jfIoBQcxUCUJouMPH25lLNcDc1ssqvC2v7iUgI9LeoM1sNovqPm
+QUiG9rHli1vXxzCyaMTjwftkJLkf6724DFhuKug2jITV0QkXvaJWF4nUaHOTNA4u
+JU9WDvZLI1j83A+/xnAJUucIv/zGJ1AMH2boHqF8CY16LpsYgBt6tKxxWH00XcyD
+CdW2KlBCeqbQPcsFmWyWugxdcekhYsAWyoSf818NUsZdBWBaR/OukXrNLfkQ79Iy
+ZohZbvabO/X+MVT3rriAoKc8oE2Uws6DF+60PV7/WIPjNvXySdqspImSN78mflxD
+qwLqRBYkA3I75qppLGG9rp7UCdRjxMl8ZDBld+7yvHVgt1cVzJx9xnyGCC23Uaic
+MDSXYrB4I4WHXPGjxhZuCuPBLTdOLU8YRvMYdEvYebWHMpvwGCF6bAx3JBpIeOQ1
+wDB5y0USicV3YgYGmi+NZfhA4URSh77Yd6uuJOJENRaNVTzk
+-----END CERTIFICATE-----`;
+
+$("pem").value = EXAMPLE_PEM;
+$("challenge").value = EXAMPLE_CHALLENGE;
+
+function parsePem(pem) {
+    const certs = [];
+    const re = /-----BEGIN CERTIFICATE-----([\s\S]*?)-----END CERTIFICATE-----/g;
+    let m;
+    while ((m = re.exec(pem)) !== null) {
+        const b64 = m[1].replace(/\s+/g, "");
+        const bin = atob(b64);
+        const bytes = new Uint8Array(bin.length);
+        for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+        certs.push(hexlify(bytes));
+    }
+    return certs;
+}
+
+function buildProof(certsHex, challenge) {
+    const coder = AbiCoder.defaultAbiCoder();
+    const challengeHex = hexlify(toUtf8Bytes(challenge));
+    return coder.encode(
+        ["tuple(bytes[] certs, bytes challenge)"],
+        [{ certs: certsHex, challenge: challengeHex }]
+    );
+}
+
+function truncHex(s, head = 24, tail = 8) {
+    if (s.length <= head + tail + 5) return s;
+    return s.slice(0, head) + "…" + s.slice(-tail);
+}
+
+async function refreshStatus() {
+    try {
+        const [ok, blockNum] = await Promise.all([
+            verifier.allowedRootFingerprints(ROOT_FP),
+            provider.getBlockNumber(),
+        ]);
+        const pill = $("rootPill");
+        if (ok) { pill.textContent = "✓ pinned"; pill.className = "pill"; }
+        else    { pill.textContent = "✗ not pinned"; pill.className = "pill bad"; }
+        $("blockNum").textContent = blockNum.toLocaleString();
+    } catch (e) {
+        $("rootPill").textContent = "RPC error"; $("rootPill").className = "pill bad";
+        $("blockNum").textContent = "?";
+    }
+}
+
+async function runVerify() {
+    const btn = $("verifyBtn"); btn.disabled = true;
+    const status = $("status"); status.textContent = "encoding proof…"; status.className = "muted";
+    const panel = $("resultPanel"); panel.style.display = "block";
+    $("resStatus").innerHTML = '<span class="result-pending">running…</span>';
+    $("resCodeId").textContent = ""; $("resPubkey").textContent = "";
+    $("resChallengeText").textContent = ""; $("resChallengeHex").textContent = "";
+
+    try {
+        const certs = parsePem($("pem").value);
+        if (certs.length === 0) throw new Error("no certs found in PEM");
+        const challenge = $("challenge").value;
+        const proof = buildProof(certs, challenge);
+        status.textContent = `calling verify() against ${certs.length}-cert chain…`;
+        const t0 = performance.now();
+        const [codeId, pubkey, userData] = await verifier.verify(proof);
+        const dt = (performance.now() - t0).toFixed(0);
+
+        $("resStatus").innerHTML = `<span class="result-ok">✓ verified</span> <span class="muted">(${dt} ms · view call · no gas charged)</span>`;
+        $("resCodeId").textContent = codeId;
+        $("resPubkey").textContent = pubkey;
+        $("resChallengeHex").textContent = userData;
+        try { $("resChallengeText").textContent = JSON.stringify(toUtf8String(userData)); }
+        catch { $("resChallengeText").textContent = "(non-UTF-8)"; }
+        status.textContent = "";
+    } catch (e) {
+        $("resStatus").innerHTML = `<span class="result-bad">✗ failed</span>`;
+        $("resCodeId").textContent = e.shortMessage || e.message || String(e);
+        $("resPubkey").textContent = "";
+        $("resChallengeText").textContent = "";
+        $("resChallengeHex").textContent = "";
+        status.textContent = "";
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+$("verifyBtn").addEventListener("click", runVerify);
+refreshStatus();
+setInterval(refreshStatus, 12000);
+</script>
+</body>
+</html>
