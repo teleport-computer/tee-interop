@@ -148,9 +148,11 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
         </div>
     </div>
     <div class="archcard">
-        <div class="t">Pubkey is bound to the challenge <span class="pill warn" style="vertical-align:middle">pattern</span></div>
+        <div class="t">ECIES pairing with GHA <span class="pill live" style="vertical-align:middle">live</span></div>
         <div class="b">
-            Each attestation binds the leaf's EC pubkey to a caller-supplied challenge inside the signed StrongBox cert. Two attested parties can use that to ECDH off-chain without an on-chain handshake. <b>Not yet demoed end-to-end here</b> — only the verifier side is live; the pairing flow is the next demo.
+            The
+            <a href="https://github.com/teleport-computer/tee-interop/actions/workflows/pair_with_pixel6.yml" target="_blank" rel="noopener">pair_with_pixel6.yml</a>
+            workflow runs on <code>ubuntu-latest</code> (no self-hosted), generates an ephemeral P-256 keypair, ECDHs against the attested leaf pubkey, AES-256-GCM-encrypts a fresh random secret, then <code>cosign sign-blob --yes</code> witnesses the encryption with the GHA OIDC identity. See the latest bundle below.
         </div>
     </div>
 </div>
@@ -183,6 +185,45 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 
     <div class="note">
         <b>codeId</b> = keccak256 of the leaf cert. Stable per device per attestation. <b>pubkey</b> = leaf cert DER (~700 bytes; SPKI inside binds the per-attestation EC pubkey). <b>challenge</b> = the bytes the StrongBox signed over — bind your own session keys here for pairing.
+    </div>
+</div>
+
+<h2>End-to-end pairing demo (live)</h2>
+<div class="panel" id="pairingPanel">
+    <div id="pairingMeta" class="muted">loading latest pairing run…</div>
+    <div id="pairingBody" style="display:none;">
+        <div class="row"><div class="k">workflow run</div><div class="v"><a id="pairRunLink" target="_blank" rel="noopener"></a></div></div>
+        <div class="row"><div class="k">commit</div><div class="v" id="pairCommit"></div></div>
+        <div class="row"><div class="k">created</div><div class="v" id="pairCreated"></div></div>
+        <div class="row"><div class="k">attested SPKI</div><div class="v hex" id="pairAttestedPub"></div></div>
+        <div class="row"><div class="k">ephemeral SPKI</div><div class="v hex" id="pairEphPub"></div></div>
+        <div class="row"><div class="k">nonce</div><div class="v hex" id="pairNonce"></div></div>
+        <div class="row"><div class="k">ciphertext</div><div class="v hex" id="pairCt"></div></div>
+        <div class="row"><div class="k">plaintext sha256</div><div class="v hex" id="pairPtHash"></div></div>
+        <hr>
+        <div><b>What just happened.</b> The GHA workflow above:</div>
+        <ol style="margin:6px 0 6px 20px; line-height:1.7;">
+            <li>Read the Pixel 6 attestation chain from the repo.</li>
+            <li>Verified it locally — same chain math as the on-chain verifier (Google root → cert2 → cert1 → leaf).</li>
+            <li>Extracted the leaf's P-256 SubjectPublicKey (shown above as <i>attested SPKI</i>).</li>
+            <li>Generated an <i>ephemeral</i> P-256 keypair on the runner. The private half dies when the runner tears down.</li>
+            <li>Did ECDH: <code>shared = ephemeral_priv × attested_pub</code>. HKDF-SHA256 → AES-256-GCM key.</li>
+            <li>Encrypted a fresh 32-byte random secret. Committed the bundle. Committed the SHA-256 of the plaintext as a public commitment.</li>
+            <li>Cosign-signed the bundle, anchoring its origin in this workflow at this commit.</li>
+        </ol>
+        <div>Only the Pixel device holding the StrongBox-resident private key can recover the plaintext, by computing the same ECDH from <i>its</i> side. The committed <code>plaintext_sha256</code> lets the recovery be publicly confirmed.</div>
+        <hr>
+        <div><b>Verify the GHA side yourself.</b></div>
+        <pre style="background:#0c0d10; border:1px solid var(--border); border-radius:4px; padding:10px; overflow-x:auto; margin:8px 0; white-space:pre-wrap;">curl -sL <span id="pairBundleUrlEcho"></span> -o bundle.json
+curl -sL <span id="pairSigstoreUrlEcho"></span> -o bundle.sigstore.json
+cosign verify-blob \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp "https://github.com/teleport-computer/tee-interop/.github/workflows/pair_with_pixel6.yml.*" \
+  --bundle bundle.sigstore.json \
+  bundle.json</pre>
+        <div class="note">A new bundle is produced every time the
+            <a href="https://github.com/teleport-computer/tee-interop/actions/workflows/pair_with_pixel6.yml" target="_blank" rel="noopener">workflow</a>
+            is dispatched. Trigger one by clicking "Run workflow" in the Actions tab.</div>
     </div>
 </div>
 
@@ -472,8 +513,39 @@ function fillRootPanel() {
 
 $("verifyBtn").addEventListener("click", runVerifyWithBreakdown);
 
+function truncMid(s, head=24, tail=12) {
+    if (!s || s.length <= head + tail + 5) return s || "";
+    return s.slice(0, head) + "…" + s.slice(-tail);
+}
+
+async function fetchLatestPairing() {
+    const meta = $("pairingMeta"); const body = $("pairingBody");
+    try {
+        const ptr = await fetch("https://raw.githubusercontent.com/teleport-computer/tee-interop/main/demos/android-pairings/latest.json", {cache: "no-store"}).then(r => r.json());
+        const bundle = await fetch(ptr.bundle_url, {cache: "no-store"}).then(r => r.json());
+
+        $("pairRunLink").textContent = `${ptr.run_id} (${ptr.label})`;
+        $("pairRunLink").href = `https://github.com/teleport-computer/tee-interop/actions/runs/${ptr.run_id}`;
+        $("pairCommit").innerHTML = `<a href="https://github.com/teleport-computer/tee-interop/commit/${ptr.commit}" target="_blank" rel="noopener">${ptr.commit.slice(0,10)}</a>`;
+        $("pairCreated").textContent = (bundle.context && bundle.context.created_at_utc) || "?";
+        $("pairAttestedPub").textContent = truncMid(bundle.attested_pubkey_spki_hex, 30, 16);
+        $("pairEphPub").textContent      = truncMid(bundle.ephemeral_pubkey_spki_hex, 30, 16);
+        $("pairNonce").textContent       = bundle.nonce_hex;
+        $("pairCt").textContent          = truncMid(bundle.ciphertext_hex, 40, 16);
+        $("pairPtHash").textContent      = bundle.plaintext_sha256_hex;
+        $("pairBundleUrlEcho").textContent   = ptr.bundle_url;
+        $("pairSigstoreUrlEcho").textContent = ptr.sigstore_url;
+
+        meta.style.display = "none";
+        body.style.display = "";
+    } catch (e) {
+        meta.innerHTML = `<span class="result-bad">failed to load pairing bundle: ${e.message || e}</span>`;
+    }
+}
+
 fillRootPanel();
 refreshStatus();
+fetchLatestPairing();
 setInterval(refreshStatus, 12000);
 </script>
 </body>
