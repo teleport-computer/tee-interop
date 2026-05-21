@@ -61,6 +61,13 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 .archcard .t { font-weight: 600; margin-bottom: 4px; color: var(--accent); font-size: 12px; }
 .archcard .b { color: var(--dim); font-size: 11px; line-height: 1.5; }
 @media (max-width: 720px) { .architecture { grid-template-columns: 1fr; } }
+.chainstep { display: flex; gap: 12px; padding: 10px 0; border-top: 1px solid var(--border); }
+.chainstep:first-child { border-top: 0; }
+.chainstep .idx { color: var(--accent); font-weight: 600; min-width: 60px; }
+.chainstep .body { flex: 1; }
+.chainstep .body .line { padding: 1px 0; }
+.chainstep .body .k { color: var(--dim); display: inline-block; min-width: 80px; }
+.chainstep .body .alg { color: var(--accent); }
 </style>
 </head>
 <body>
@@ -80,6 +87,45 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
         <div class="v" id="rootStatus"><span class="muted">0xc1984a3ef45c1e2a918551de10603c86f7051b2249c4891cae3230eabd0c97d5</span><span class="pill" id="rootPill">checking…</span></div>
     </div>
     <div class="row"><div class="k">Latest block</div><div class="v" id="blockNum">…</div></div>
+</div>
+
+<h2>Pinned root provenance</h2>
+<div class="panel">
+    The SHA-256 above pins a specific certificate. That certificate is the
+    <b>Google Hardware Attestation Root</b> issued 2016, serial
+    <code>f92009e853b6b045</code>. Google publishes this and its successors
+    in their reference verifier at
+    <a href="https://github.com/google/android-key-attestation/tree/master/src/main/resources" target="_blank" rel="noopener">google/android-key-attestation</a>
+    and documents them at
+    <a href="https://developer.android.com/privacy-and-security/security-key-attestation#root_certificate" target="_blank" rel="noopener">developer.android.com</a>.
+
+    <div style="margin-top:14px;">
+        <div class="row"><div class="k">Subject</div><div class="v">serialNumber = <code>f92009e853b6b045</code> <span class="muted">(self-issued)</span></div></div>
+        <div class="row"><div class="k">Issuer</div><div class="v">serialNumber = <code>f92009e853b6b045</code></div></div>
+        <div class="row"><div class="k">Validity</div><div class="v">2016-05-26 → 2026-05-24 <span class="muted" id="rootValidNote">(checking expiry…)</span></div></div>
+        <div class="row"><div class="k">Signature</div><div class="v">RSA-PKCS1v15-SHA256, self-signed</div></div>
+        <div class="row"><div class="k">Public key</div><div class="v">RSA-4096, exponent 65537</div></div>
+        <div class="row"><div class="k">DER length</div><div class="v">1380 bytes</div></div>
+    </div>
+
+    <hr>
+
+    <div><b>Cross-check yourself.</b> Download Google's published root and hash it:</div>
+    <pre style="background:#0c0d10; border:1px solid var(--border); border-radius:4px; padding:10px; overflow-x:auto; margin:8px 0; white-space: pre-wrap;">curl -sL https://raw.githubusercontent.com/google/android-key-attestation/master/src/main/resources/release/0.pem \
+  | openssl x509 -outform DER \
+  | openssl dgst -sha256
+# expected: c1984a3ef45c1e2a918551de10603c86f7051b2249c4891cae3230eabd0c97d5
+# matches the on-chain pinned value above ✓</pre>
+
+    <details style="margin-top:10px;">
+        <summary style="cursor:pointer; color:var(--dim);">Show the actual root cert PEM (1.4 KB)</summary>
+        <pre id="rootPemBox" style="background:#0c0d10; border:1px solid var(--border); border-radius:4px; padding:10px; overflow-x:auto; margin:8px 0; font-size:11px;"></pre>
+        <div class="note">This is the cert whose SHA-256 the on-chain verifier requires. Change it and your proof won't verify against the pinned root.</div>
+    </details>
+
+    <div class="note" style="margin-top:14px;">
+        The on-chain verifier accepts <i>only</i> chains terminating in this specific cert. To accept additional Google roots (as they rotate), the contract owner calls <code>addRoot(sha256)</code> — that's the only governance lever.
+    </div>
 </div>
 
 <h2>Architecture</h2>
@@ -120,7 +166,10 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
     <div class="row"><div class="k">pubkey (leaf DER)</div><div class="v hex" id="resPubkey"></div></div>
     <div class="row"><div class="k">challenge (decoded)</div><div class="v" id="resChallengeText"></div></div>
     <div class="row"><div class="k">challenge (hex)</div><div class="v hex" id="resChallengeHex"></div></div>
-    <hr>
+
+    <h2 style="margin-top:18px;">Submitted chain (decoded client-side)</h2>
+    <div id="chainBreakdown"></div>
+
     <div class="note">
         <b>codeId</b> = keccak256 of the leaf cert. Stable per device per attestation. <b>pubkey</b> = leaf cert DER (~700 bytes; SPKI inside binds the per-attestation EC pubkey). <b>challenge</b> = the bytes the StrongBox signed over — bind your own session keys here for pairing.
     </div>
@@ -140,6 +189,7 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 
 <script type="module">
 import { JsonRpcProvider, Contract, AbiCoder, getBytes, hexlify, toUtf8Bytes, toUtf8String } from "https://esm.sh/ethers@6.13.0";
+import * as x509 from "https://esm.sh/@peculiar/x509@1.12.3";
 
 const RPC = "https://sepolia.base.org";
 const VERIFIER = "0x82e52495773245d5246f55dbba9cc3149cf57644";
@@ -324,7 +374,94 @@ async function runVerify() {
     }
 }
 
-$("verifyBtn").addEventListener("click", runVerify);
+function decodeCertSummary(derHex) {
+    try {
+        const der = getBytes(derHex);
+        const cert = new x509.X509Certificate(der);
+        const sigAlg = cert.signatureAlgorithm;
+        const pubAlg = cert.publicKey.algorithm;
+        return {
+            subject: cert.subject,
+            issuer: cert.issuer,
+            notBefore: cert.notBefore.toISOString().slice(0, 10),
+            notAfter: cert.notAfter.toISOString().slice(0, 10),
+            sigAlgo: (sigAlg.name || "?") + (sigAlg.hash ? "-" + sigAlg.hash.name : ""),
+            pubkeyAlgo: pubAlg.name + (pubAlg.modulusLength ? "-" + pubAlg.modulusLength : "") + (pubAlg.namedCurve ? " " + pubAlg.namedCurve : ""),
+            derLen: der.length,
+        };
+    } catch (e) {
+        return { error: e.message || String(e) };
+    }
+}
+
+function chainLinkAlgo(child) {
+    // Algorithm that signed `child` — pulled from its signatureAlgorithm field.
+    return child.sigAlgo;
+}
+
+function renderChainBreakdown(certsHex) {
+    const box = $("chainBreakdown"); box.innerHTML = "";
+    const decoded = certsHex.map(decodeCertSummary);
+    decoded.forEach((c, i) => {
+        const div = document.createElement("div"); div.className = "chainstep";
+        const label = i === 0 ? "leaf" : i === decoded.length - 1 ? "root" : `cert ${i}`;
+        const link = i < decoded.length - 1
+            ? `<span class="muted">signed by</span> <span class="alg">${chainLinkAlgo(c)}</span> <span class="muted">→</span> ${i === decoded.length - 2 ? "<b>pinned root</b>" : `cert ${i + 1}`}`
+            : `<span class="muted">SHA-256 pinned in <code>allowedRootFingerprints</code></span>`;
+        if (c.error) {
+            div.innerHTML = `<div class="idx">${label}</div><div class="body"><span class="result-bad">parse error: ${c.error}</span></div>`;
+        } else {
+            div.innerHTML = `
+                <div class="idx">${label}</div>
+                <div class="body">
+                    <div class="line"><span class="k">subject</span> ${c.subject}</div>
+                    <div class="line"><span class="k">issuer</span> ${c.issuer}</div>
+                    <div class="line"><span class="k">pubkey</span> <span class="alg">${c.pubkeyAlgo}</span></div>
+                    <div class="line"><span class="k">validity</span> ${c.notBefore} → ${c.notAfter}</div>
+                    <div class="line"><span class="k">${i < decoded.length - 1 ? "link" : "trust"}</span> ${link}</div>
+                </div>`;
+        }
+        box.appendChild(div);
+    });
+}
+
+// Hook chain breakdown into runVerify by patching the existing fn:
+const _origRunVerify = runVerify;
+async function runVerifyWithBreakdown() {
+    $("chainBreakdown").innerHTML = "";
+    await _origRunVerify();
+    // After verify completes, decode and render the submitted chain
+    const certs = parsePem($("pem").value);
+    if (certs.length) renderChainBreakdown(certs);
+}
+
+// Populate the root cert PEM box + expiry note from the example chain
+function fillRootPanel() {
+    const certs = parsePem(EXAMPLE_PEM);
+    if (!certs.length) return;
+    const rootDer = certs[certs.length - 1];
+    // Re-derive PEM from DER for display
+    const bin = Array.from(getBytes(rootDer));
+    let b64 = btoa(String.fromCharCode.apply(null, bin));
+    const lines = [];
+    for (let i = 0; i < b64.length; i += 64) lines.push(b64.slice(i, i + 64));
+    $("rootPemBox").textContent = "-----BEGIN CERTIFICATE-----\n" + lines.join("\n") + "\n-----END CERTIFICATE-----";
+
+    // Expiry note (relative to today)
+    try {
+        const cert = new x509.X509Certificate(getBytes(rootDer));
+        const now = new Date();
+        const diffDays = Math.round((cert.notAfter - now) / 86400000);
+        const note = $("rootValidNote");
+        if (diffDays < 0)         note.innerHTML = `<span class="result-bad">(expired ${-diffDays} days ago — Google has rotated to a newer root; owner must call addRoot)</span>`;
+        else if (diffDays < 60)   note.innerHTML = `<span style="color:var(--warn)">(expires in ${diffDays} days — rotation pending)</span>`;
+        else                       note.innerHTML = `<span class="muted">(${diffDays} days until rotation)</span>`;
+    } catch (e) {}
+}
+
+$("verifyBtn").addEventListener("click", runVerifyWithBreakdown);
+
+fillRootPanel();
 refreshStatus();
 setInterval(refreshStatus, 12000);
 </script>
