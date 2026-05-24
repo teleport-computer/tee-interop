@@ -32,7 +32,7 @@ on:
         description: "Expected challenge the leaf must bind"
         required: true
         type: string
-        default: "edge-tee-pixel6-first-attestation-20260520"
+        default: "edge-tee-pixel6-agree-key-20260524"
       label:
         description: "Short label used in committed artifact paths"
         required: true

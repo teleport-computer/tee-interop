@@ -3,3 +3,7 @@ cache/
 lib/
 .env
 __pycache__/
+pixel-attest/app/build/
+pixel-attest/pixel_attestation_*.pem
+pixel-attest/pixel_attestation_*.info
+pixel-attest/pixel_attestation_*.err
