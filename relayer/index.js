@@ -26,6 +26,8 @@ const VERIFIER_ABI = [
 ];
 const FAUCET_ABI = [
     "function claim(bytes32 deviceFingerprint, address to, string message, bytes32 pemHash, bytes32 codeId, uint256 deadline, bytes relayerSig)",
+    "function claimed(bytes32) view returns (bool)",
+    "event Tagged(bytes32 indexed deviceFingerprint, address indexed to, string message, bytes32 pemHash, bytes32 codeId, uint256 timestamp)",
     "error AlreadyClaimed()",
     "error Expired()",
     "error BadRelayerSig()",
@@ -119,6 +121,38 @@ export default {
         const chainId = Number((await provider.getNetwork()).chainId);
         const faucetAddr = getAddress(env.FAUCET_ADDRESS);
         const toAddr = getAddress(to);
+
+        // SYBIL PRE-CHECK: keccak256(certs[1]) is the per-device StrongBox
+        // attestation-key fingerprint. If this fingerprint already claimed,
+        // return the original Tagged event without spending gas / a verify
+        // RPC call / a doomed claim tx that the contract would revert anyway.
+        const deviceFingerprint = keccak256(certs[1]);
+        const faucetView = new Contract(faucetAddr, FAUCET_ABI, provider);
+        if (await faucetView.claimed(deviceFingerprint)) {
+            let originalTagged = null;
+            try {
+                const evs = await faucetView.queryFilter(
+                    faucetView.filters.Tagged(deviceFingerprint), 0,
+                );
+                if (evs.length) {
+                    const e = evs[0];
+                    originalTagged = {
+                        txHash: e.transactionHash,
+                        to: e.args.to,
+                        message: e.args.message,
+                        timestamp: Number(e.args.timestamp),
+                        explorer: `https://sepolia.basescan.org/tx/${e.transactionHash}`,
+                    };
+                }
+            } catch (_) {}
+            return json({
+                alreadyClaimed: true,
+                deviceFingerprint,
+                faucet: faucetAddr,
+                original: originalTagged,
+            }, 200);
+        }
+
         const expectedChallenge = await computeBinding(chainId, faucetAddr, toAddr, message);
 
         const coder = AbiCoder.defaultAbiCoder();
@@ -143,7 +177,6 @@ export default {
             }, 422);
         }
 
-        const deviceFingerprint = keccak256(certs[1]);
         const pemHash = keccak256(toUtf8Bytes(pem));
         const deadline = BigInt(Math.floor(Date.now() / 1000) + PERMIT_TTL_SECONDS);
 

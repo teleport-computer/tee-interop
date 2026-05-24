@@ -79,22 +79,34 @@ const isClaimed = await faucet.claimed(ev.args.deviceFingerprint);
 console.log("taggedCount:", count.toString());
 console.log("claimed[fingerprint]:", isClaimed);
 
-// Replay protection: second call with the same chain MUST revert AlreadyClaimed.
+// Pre-check: second call should short-circuit on faucet.claimed(fp) check
+// and return 200 with alreadyClaimed=true, WITHOUT submitting a doomed tx.
 console.log("---");
-console.log("re-submitting same claim, expecting AlreadyClaimed...");
+console.log("re-submitting same chain, expecting alreadyClaimed short-circuit (no gas spent)...");
+const blockBefore = await provider.getBlockNumber();
 const resp2 = await worker.fetch(makeReq(), env);
 const body2 = await resp2.json();
-console.log("status:", resp2.status, "error:", body2.error || "(none)");
-if (resp2.ok) {
-    console.error("FAIL: second claim should have reverted");
+const blockAfter = await provider.getBlockNumber();
+console.log("status:", resp2.status);
+console.log("body:", JSON.stringify(body2, null, 2));
+console.log("blocks advanced:", blockAfter - blockBefore);
+
+if (!resp2.ok) {
+    console.error("FAIL: expected 200 with alreadyClaimed, got error:", body2.error);
     process.exit(1);
 }
-// Accept any revert as "rejected" — the custom-error name in the ABI doesn't
-// always decode through ethers' simulation path. Semantic check: claim() reverted.
-if (!String(body2.error).toLowerCase().includes("revert")) {
-    console.error("FAIL: error didn't mention revert:", body2.error);
+if (!body2.alreadyClaimed) {
+    console.error("FAIL: alreadyClaimed flag missing");
     process.exit(1);
 }
-console.log("✓ replay rejected:", body2.error);
+if (blockAfter !== blockBefore) {
+    console.error("FAIL: relayer submitted a tx anyway (waste of gas)");
+    process.exit(1);
+}
+if (!body2.original || body2.original.txHash !== body.txHash) {
+    console.error("FAIL: original Tagged event not surfaced", body2.original);
+    process.exit(1);
+}
+console.log("✓ short-circuited with original tx hash, zero gas spent on repeat");
 
 console.log("---\nOK");
