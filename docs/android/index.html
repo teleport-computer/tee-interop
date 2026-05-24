@@ -72,123 +72,25 @@ hr { border: none; border-top: 1px solid var(--border); margin: 16px 0; }
 </head>
 <body>
 
-<h1>Android Key Attestation Verifier</h1>
-<div class="sub">Live on Base Sepolia. Anyone can re-verify any Pixel attestation by view-calling the deployed contract.</div>
-
-<div class="panel" id="netpanel">
-    <div class="row"><div class="k">Network</div><div class="v">Base Sepolia · chain 84532</div></div>
-    <div class="row"><div class="k">Verifier</div>
-        <div class="v"><a href="https://sepolia.basescan.org/address/0x82e52495773245d5246f55dbba9cc3149cf57644" target="_blank" rel="noopener">0x82e52495773245d5246f55dbba9cc3149cf57644</a></div>
-    </div>
-    <div class="row"><div class="k">P256 backend</div>
-        <div class="v"><a href="https://sepolia.basescan.org/address/0x383f8d39fb6ca98f544130b425dfdd7e94c98955" target="_blank" rel="noopener">0x383f8d39fb6ca98f544130b425dfdd7e94c98955</a></div>
-    </div>
-    <div class="row"><div class="k">Pinned root</div>
-        <div class="v" id="rootStatus"><span class="muted">0xc1984a3ef45c1e2a918551de10603c86f7051b2249c4891cae3230eabd0c97d5</span><span class="pill" id="rootPill">checking…</span></div>
-    </div>
-    <div class="row"><div class="k">Latest block</div><div class="v" id="blockNum">…</div></div>
+<h1>Pixel as a publicly verifiable, permissionless TEE</h1>
+<div class="sub">
+    A Pixel 6's Titan M2 is a single-die integrated secure element with attestations rooted in a Google-published hardware key. Combined with APK sideloading via <code>adb install</code> — no Play Store, no developer account, no infrastructure between you and your phone — any Pixel can act as an interoperable peer in a publicly verifiable TEE network. Below: live evidence of a Pixel and a GitHub-Actions runner exchanging a secret end-to-end, both sides independently verifiable.
 </div>
 
-<h2>Pinned root provenance</h2>
-<div class="panel">
-    The SHA-256 above pins a specific certificate. That certificate is the
-    <b>Google Hardware Attestation Root</b> issued 2016, serial
-    <code>f92009e853b6b045</code>. Google publishes this and its successors
-    in their reference verifier at
-    <a href="https://github.com/google/android-key-attestation/tree/master/src/main/resources" target="_blank" rel="noopener">google/android-key-attestation</a>
-    and documents them at
-    <a href="https://developer.android.com/privacy-and-security/security-key-attestation#root_certificate" target="_blank" rel="noopener">developer.android.com</a>.
-
-    <div style="margin-top:14px;">
-        <div class="row"><div class="k">Subject</div><div class="v">serialNumber = <code>f92009e853b6b045</code> <span class="muted">(self-issued)</span></div></div>
-        <div class="row"><div class="k">Issuer</div><div class="v">serialNumber = <code>f92009e853b6b045</code></div></div>
-        <div class="row"><div class="k">Validity</div><div class="v">2016-05-26 → 2026-05-24 <span class="muted" id="rootValidNote">(checking expiry…)</span></div></div>
-        <div class="row"><div class="k">Signature</div><div class="v">RSA-PKCS1v15-SHA256, self-signed</div></div>
-        <div class="row"><div class="k">Public key</div><div class="v">RSA-4096, exponent 65537</div></div>
-        <div class="row"><div class="k">DER length</div><div class="v">1380 bytes</div></div>
-    </div>
-
-    <hr>
-
-    <div><b>Cross-check yourself.</b> Download Google's published root and hash it:</div>
-    <pre style="background:#0c0d10; border:1px solid var(--border); border-radius:4px; padding:10px; overflow-x:auto; margin:8px 0; white-space: pre-wrap;">curl -sL https://raw.githubusercontent.com/google/android-key-attestation/master/src/main/resources/release/0.pem \
-  | openssl x509 -outform DER \
-  | openssl dgst -sha256
-# expected: c1984a3ef45c1e2a918551de10603c86f7051b2249c4891cae3230eabd0c97d5
-# matches the on-chain pinned value above ✓</pre>
-
-    <details style="margin-top:10px;">
-        <summary style="cursor:pointer; color:var(--dim);">Show the actual root cert PEM (1.4 KB)</summary>
-        <pre id="rootPemBox" style="background:#0c0d10; border:1px solid var(--border); border-radius:4px; padding:10px; overflow-x:auto; margin:8px 0; font-size:11px;"></pre>
-        <div class="note">This is the cert whose SHA-256 the on-chain verifier requires. Change it and your proof won't verify against the pinned root.</div>
-    </details>
-
-    <div class="note" style="margin-top:14px;">
-        The on-chain verifier accepts <i>only</i> chains terminating in this specific cert. To accept additional Google roots (as they rotate), the contract owner calls <code>addRoot(sha256)</code> — that's the only governance lever.
-    </div>
+<h2>What makes this work</h2>
+<div class="panel" style="line-height:1.7;">
+    <p style="margin:0 0 14px 0;">
+        <b>Integrated TEE.</b> Titan M2 in the Pixel 6 puts the attestation signing key and the secure-boot ROM on the same silicon die. Bus-master substitution — the attack that breaks discrete-TPM-on-Pi or STSAFE-on-MCU setups — doesn't work against it. Same trust model as Intel SGX, AMD SEV-SNP, or AWS Nitro Enclave, on consumer hardware around <a href="https://store.google.com/category/phones" target="_blank" rel="noopener">$300</a>.
+    </p>
+    <p style="margin:0 0 14px 0;">
+        <b>Publicly verifiable.</b> The chain terminates in <a href="https://developer.android.com/privacy-and-security/security-key-attestation#root_certificate" target="_blank" rel="noopener">Google's published Hardware Attestation Root</a> — the same root every other verifier in the ecosystem uses. Re-verification is a stateless <code>eth_call</code> against a deployed Solidity verifier; the pairing artifact is also Sigstore-witnessed so the GitHub-Actions side is independently re-verifiable via <code>cosign verify-blob</code>. Two unrelated public CAs sign off on one end-to-end claim.
+    </p>
+    <p style="margin:0;">
+        <b>Permissionless.</b> Attestation binds to <i>hardware</i>, not to app distribution. <code>adb install</code> works on any consumer Pixel once USB debugging is enabled — no Google Play developer account, no app review, no signing key from us. You write the code, install it on your own phone, and the StrongBox attests to whatever key it generated. See <a href="#permissionless-detail">how sideloading composes with attestation</a> below.
+    </p>
 </div>
 
-<h2>What you can check yourself</h2>
-<div class="architecture">
-    <div class="archcard">
-        <div class="t">Policy lives in <code>allowedRootFingerprints</code></div>
-        <div class="b">
-            Owner is <a href="https://sepolia.basescan.org/address/0x5A370b73385085091de23E0fD21B54F2724EAD8D" target="_blank" rel="noopener">0x5A37…AD8D</a>; only they can call <code>addRoot</code> / <code>removeRoot</code>. Query any pin yourself via
-            <a href="https://sepolia.basescan.org/address/0x82e52495773245d5246f55dbba9cc3149cf57644#readContract" target="_blank" rel="noopener">BaseScan Read Contract</a>
-            → <code>allowedRootFingerprints(bytes32) → bool</code>.
-            The pinned-root pill above runs that exact call every 12 s.
-        </div>
-    </div>
-    <div class="archcard">
-        <div class="t"><code>verify(bytes)</code> is <code>view</code></div>
-        <div class="b">
-            Marked <code>view</code> in
-            <a href="https://github.com/teleport-computer/tee-interop/blob/main/contracts/AndroidKeyAttestationVerifier.sol" target="_blank" rel="noopener">AndroidKeyAttestationVerifier.sol</a>.
-            Same code path costs ~50M gas if called as a state-changing tx (measured via <code>cast estimate</code>) — over Base's 16.7M per-tx cap. As a view call it has no cap and is deterministic: same proof bytes → same <code>(codeId, pubkey, challenge)</code> tuple every time, for everyone.
-        </div>
-    </div>
-    <div class="archcard">
-        <div class="t">ECIES pairing with GHA <span class="pill live" style="vertical-align:middle">live</span></div>
-        <div class="b">
-            The
-            <a href="https://github.com/teleport-computer/tee-interop/actions/workflows/pair_with_pixel6.yml" target="_blank" rel="noopener">pair_with_pixel6.yml</a>
-            workflow runs on <code>ubuntu-latest</code> (no self-hosted), generates an ephemeral P-256 keypair, ECDHs against the attested leaf pubkey, AES-256-GCM-encrypts a fresh random secret, then <code>cosign sign-blob --yes</code> witnesses the encryption with the GHA OIDC identity. See the latest bundle below.
-        </div>
-    </div>
-</div>
-
-<h2>Re-verify an attestation</h2>
-<div class="panel">
-    <label for="pem">PEM cert chain (leaf-first)</label>
-    <textarea id="pem" spellcheck="false"></textarea>
-    <label for="challenge">Expected attestation challenge (the bytes the device was asked to sign over)</label>
-    <input type="text" id="challenge" />
-    <div style="margin-top:14px;">
-        <button id="verifyBtn">Verify on-chain</button>
-        <span style="margin-left:12px;" id="status" class="muted"></span>
-    </div>
-    <div class="note">
-        Re-verification is a stateless <code>eth_call</code> against the Base Sepolia verifier. The proof bytes never leave your browser before being submitted to the public RPC. The verifier returns (codeId, leafDer, challenge) iff the chain signatures + root pin + policy all pass.
-    </div>
-</div>
-
-<div class="panel" id="resultPanel" style="display:none;">
-    <h2 style="margin-top:0">Result</h2>
-    <div class="row"><div class="k">Status</div><div class="v" id="resStatus"></div></div>
-    <div class="row"><div class="k">codeId</div><div class="v hex" id="resCodeId"></div></div>
-    <div class="row"><div class="k">pubkey (leaf DER)</div><div class="v hex" id="resPubkey"></div></div>
-    <div class="row"><div class="k">challenge (decoded)</div><div class="v" id="resChallengeText"></div></div>
-    <div class="row"><div class="k">challenge (hex)</div><div class="v hex" id="resChallengeHex"></div></div>
-
-    <h2 style="margin-top:18px;">Submitted chain (decoded client-side)</h2>
-    <div id="chainBreakdown"></div>
-
-    <div class="note">
-        <b>codeId</b> = keccak256 of the leaf cert. Stable per device per attestation. <b>pubkey</b> = leaf cert DER (~700 bytes; SPKI inside binds the per-attestation EC pubkey). <b>challenge</b> = the bytes the StrongBox signed over — bind your own session keys here for pairing.
-    </div>
-</div>
-
-<h2>End-to-end pairing demo (live)</h2>
+<h2>Live demo · Pixel ↔ GitHub-Actions handshake</h2>
 <div class="panel" id="pairingPanel">
     <div id="pairingMeta" class="muted">loading latest pairing run…</div>
     <div id="pairingBody" style="display:none;">
@@ -266,16 +168,108 @@ app/build.sh                                 # produces app/build/edgetee-attest
     </div>
 </div>
 
-<h2>What's actually happening</h2>
+<h2 id="permissionless-detail">Why this is permissionless</h2>
 <div class="panel" style="line-height:1.7;">
-    Each chain link is verified inside the EVM:
+    <p style="margin:0 0 12px 0;">The APK that produced the chain above lives in this repo at <a href="https://github.com/teleport-computer/tee-interop/tree/main/pixel-attest" target="_blank" rel="noopener">pixel-attest/</a>. Two activities (~280 lines of Java), built with <code>javac → d8 → aapt2 → apksigner</code>. No Gradle, no Android Studio. Signed APK is ~16 KB.</p>
+    <p style="margin:0 0 12px 0;">To run on your own Pixel — no Play Store interaction needed:</p>
+    <pre style="background:#0c0d10; border:1px solid var(--border); border-radius:4px; padding:10px; overflow-x:auto; margin:8px 0; white-space:pre-wrap;"># once: enable Developer Options → USB debugging, accept the RSA prompt
+adb install edgetee-attest.apk
+adb shell am start -n com.edgetee.attest/.MainActivity \
+    -e challenge "your-challenge" \
+    -e alias "your-alias" \
+    -e strongbox true
+adb pull /sdcard/Android/data/com.edgetee.attest/files/attestation.pem</pre>
+    <p style="margin:0 0 12px 0;">Titan M2 doesn't care which app made the keygen request. It records the caller's signing-cert digest in the <code>attestationApplicationId</code> field (a fact recorded inside the chain, not a permission check) and proceeds. Our on-chain verifier doesn't constrain that field either — any sideloaded APK signed with any debug keystore can produce a valid chain. The cryptographic chain still terminates at Google's hardware root.</p>
+    <p class="note" style="margin:0;">This is the layer-distinction from <a href="https://developer.apple.com/documentation/devicecheck" target="_blank" rel="noopener">iOS App Attest</a> or <a href="https://developer.android.com/google/play/integrity" target="_blank" rel="noopener">Play Integrity API</a>: those bind the attestation to <i>an app distributed via the platform store</i>. Android Key Attestation operates one layer lower — it attests to the device's secure-element-held key, regardless of app provenance. The result is the same hardware-trust guarantee with no platform-distribution gatekeeper.</p>
+</div>
+
+<h2>How it composes with other TEEs</h2>
+<div class="panel" style="line-height:1.7;">
+    <p style="margin:0 0 12px 0;"><a href="https://github.com/teleport-computer/tee-interop" target="_blank" rel="noopener">tee-interop</a> is a multi-verifier registry: each attestation platform plugs in as an <a href="https://github.com/teleport-computer/tee-interop#the-interface-erc-733" target="_blank" rel="noopener">ERC-733 <code>IVerifier</code></a>. The registry has zero platform-specific code; the demo above pairs Android Key Attestation with Sigstore via GHA OIDC, but the same composition works between any two registered verifiers (Android + Nitro, SGX + Pixel, etc.).</p>
+    <p style="margin:0 0 12px 0;">Each chain link in the Pixel side is verified inside the EVM:</p>
     <ul style="margin:8px 0 8px 20px; padding:0;">
-        <li>leaf → cert1 : ECDSA-P256-SHA256 (via vendored daimo P256Verifier)</li>
-        <li>cert1 → cert2 : ECDSA-P384-SHA256 (ported from estid-sig P-384 / Estonian e-ID)</li>
-        <li>cert2 → root : RSA-PKCS1v15-SHA256 (via modexp precompile)</li>
+        <li>leaf → cert1 : ECDSA-P256-SHA256 (via vendored <a href="https://github.com/daimo-eth/p256-verifier" target="_blank" rel="noopener">daimo P256Verifier</a>)</li>
+        <li>cert1 → cert2 : ECDSA-P384-SHA256 (ported from <a href="https://github.com/LogvinovLeon/estid-sig" target="_blank" rel="noopener">estid-sig</a> Estonian e-ID P-384)</li>
+        <li>cert2 → root : RSA-PKCS1v15-SHA256 (via the <code>modexp</code> precompile, <a href="https://github.com/adria0/SolRsaVerify" target="_blank" rel="noopener">adria0/SolRsaVerify</a>)</li>
         <li>root : SHA-256 pin in <code>allowedRootFingerprints</code></li>
     </ul>
-    Plus on-chain DER parsing of the leaf to recover (challenge, deviceLocked, verifiedBootState) from the Android Key Attestation extension at OID 1.3.6.1.4.1.11129.2.1.17. Source: <a href="https://github.com/teleport-computer/tee-interop" target="_blank">teleport-computer/tee-interop</a>.
+    <p style="margin:0 0 12px 0;">Plus on-chain DER parsing of the leaf to recover (challenge, deviceLocked, verifiedBootState) from the Android Key Attestation extension at OID 1.3.6.1.4.1.11129.2.1.17. <code>verify(bytes)</code> is marked <code>view</code> in <a href="https://github.com/teleport-computer/tee-interop/blob/main/contracts/AndroidKeyAttestationVerifier.sol" target="_blank" rel="noopener">AndroidKeyAttestationVerifier.sol</a> — the same code path would cost ~50M gas as a state-changing tx (over Base's 16.7M per-tx cap) but is unconstrained as a view call. Same proof bytes → same <code>(codeId, pubkey, challenge)</code> tuple every time, for everyone.</p>
+</div>
+
+<h2>Tool · re-verify any Pixel attestation</h2>
+<div class="panel">
+    <p class="note" style="margin:0 0 12px 0;">Paste a Pixel attestation chain + the challenge it should bind. The page submits a view call to the deployed verifier on Base Sepolia and renders the parsed chain client-side. Proof bytes never leave your browser before hitting the public RPC.</p>
+    <label for="pem">PEM cert chain (leaf-first)</label>
+    <textarea id="pem" spellcheck="false"></textarea>
+    <label for="challenge">Expected attestation challenge (the bytes the device was asked to sign over)</label>
+    <input type="text" id="challenge" />
+    <div style="margin-top:14px;">
+        <button id="verifyBtn">Verify on-chain</button>
+        <span style="margin-left:12px;" id="status" class="muted"></span>
+    </div>
+</div>
+
+<div class="panel" id="resultPanel" style="display:none;">
+    <h2 style="margin-top:0">Result</h2>
+    <div class="row"><div class="k">Status</div><div class="v" id="resStatus"></div></div>
+    <div class="row"><div class="k">codeId</div><div class="v hex" id="resCodeId"></div></div>
+    <div class="row"><div class="k">pubkey (leaf DER)</div><div class="v hex" id="resPubkey"></div></div>
+    <div class="row"><div class="k">challenge (decoded)</div><div class="v" id="resChallengeText"></div></div>
+    <div class="row"><div class="k">challenge (hex)</div><div class="v hex" id="resChallengeHex"></div></div>
+
+    <h2 style="margin-top:18px;">Submitted chain (decoded client-side)</h2>
+    <div id="chainBreakdown"></div>
+
+    <div class="note">
+        <b>codeId</b> = keccak256 of the leaf cert (stable per device per attestation). <b>pubkey</b> = leaf cert DER, ~700 bytes; its SPKI binds the per-attestation EC pubkey. <b>challenge</b> = the bytes the StrongBox signed over — bind your own session keys here for pairing.
+    </div>
+</div>
+
+<h2>Pinned root provenance</h2>
+<div class="panel">
+    The on-chain verifier accepts <i>only</i> chains terminating in one specific cert: the <b>Google Hardware Attestation Root</b> issued 2016, serial <code>f92009e853b6b045</code>, SHA-256 <code>0xc1984a3ef45c1e2a918551de10603c86f7051b2249c4891cae3230eabd0c97d5</code>. Google publishes this and its successors in their reference verifier at <a href="https://github.com/google/android-key-attestation/tree/master/src/main/resources" target="_blank" rel="noopener">google/android-key-attestation</a>.
+
+    <div style="margin-top:14px;">
+        <div class="row"><div class="k">Subject</div><div class="v">serialNumber = <code>f92009e853b6b045</code> <span class="muted">(self-issued)</span></div></div>
+        <div class="row"><div class="k">Issuer</div><div class="v">serialNumber = <code>f92009e853b6b045</code></div></div>
+        <div class="row"><div class="k">Validity</div><div class="v">2016-05-26 → 2026-05-24 <span class="muted" id="rootValidNote">(checking expiry…)</span></div></div>
+        <div class="row"><div class="k">Signature</div><div class="v">RSA-PKCS1v15-SHA256, self-signed</div></div>
+        <div class="row"><div class="k">Public key</div><div class="v">RSA-4096, exponent 65537</div></div>
+        <div class="row"><div class="k">DER length</div><div class="v">1380 bytes</div></div>
+    </div>
+
+    <hr>
+
+    <div><b>Cross-check yourself.</b> Download Google's published root and hash it:</div>
+    <pre style="background:#0c0d10; border:1px solid var(--border); border-radius:4px; padding:10px; overflow-x:auto; margin:8px 0; white-space: pre-wrap;">curl -sL https://raw.githubusercontent.com/google/android-key-attestation/master/src/main/resources/release/0.pem \
+  | openssl x509 -outform DER \
+  | openssl dgst -sha256
+# expected: c1984a3ef45c1e2a918551de10603c86f7051b2249c4891cae3230eabd0c97d5
+# matches the on-chain pinned value above ✓</pre>
+
+    <details style="margin-top:10px;">
+        <summary style="cursor:pointer; color:var(--dim);">Show the actual root cert PEM (1.4 KB)</summary>
+        <pre id="rootPemBox" style="background:#0c0d10; border:1px solid var(--border); border-radius:4px; padding:10px; overflow-x:auto; margin:8px 0; font-size:11px;"></pre>
+    </details>
+
+    <div class="note" style="margin-top:14px;">
+        To accept additional Google roots (as they rotate), the contract owner — <a href="https://sepolia.basescan.org/address/0x5A370b73385085091de23E0fD21B54F2724EAD8D" target="_blank" rel="noopener">0x5A37…AD8D</a> — calls <code>addRoot(sha256)</code>. That's the only governance lever. Query any pin yourself via <a href="https://sepolia.basescan.org/address/0x82e52495773245d5246f55dbba9cc3149cf57644#readContract" target="_blank" rel="noopener">BaseScan Read Contract</a> → <code>allowedRootFingerprints(bytes32)</code>. The pill below runs that exact call every 12 s.
+    </div>
+</div>
+
+<h2>Network</h2>
+<div class="panel" id="netpanel">
+    <div class="row"><div class="k">Chain</div><div class="v">Base Sepolia · chain 84532</div></div>
+    <div class="row"><div class="k">Verifier</div>
+        <div class="v"><a href="https://sepolia.basescan.org/address/0x82e52495773245d5246f55dbba9cc3149cf57644" target="_blank" rel="noopener">0x82e52495773245d5246f55dbba9cc3149cf57644</a></div>
+    </div>
+    <div class="row"><div class="k">P256 backend</div>
+        <div class="v"><a href="https://sepolia.basescan.org/address/0x383f8d39fb6ca98f544130b425dfdd7e94c98955" target="_blank" rel="noopener">0x383f8d39fb6ca98f544130b425dfdd7e94c98955</a></div>
+    </div>
+    <div class="row"><div class="k">Pinned root</div>
+        <div class="v" id="rootStatus"><span class="muted">0xc1984a3ef45c1e2a918551de10603c86f7051b2249c4891cae3230eabd0c97d5</span><span class="pill" id="rootPill">checking…</span></div>
+    </div>
+    <div class="row"><div class="k">Latest block</div><div class="v" id="blockNum">…</div></div>
 </div>
 
 <script type="module">
@@ -296,23 +290,23 @@ const verifier = new Contract(VERIFIER, ABI, provider);
 
 const $ = (id) => document.getElementById(id);
 
-const EXAMPLE_CHALLENGE = "edge-tee-pixel6-first-attestation-20260520";
+const EXAMPLE_CHALLENGE = "edge-tee-pixel6-agree-key-20260524";
 const EXAMPLE_PEM = `-----BEGIN CERTIFICATE-----
-MIICszCCAlmgAwIBAgIBATAKBggqhkjOPQQDAjA/MRIwEAYDVQQMDAlTdHJvbmdC
+MIICrTCCAlSgAwIBAgIBATAKBggqhkjOPQQDAjA/MRIwEAYDVQQMDAlTdHJvbmdC
 b3gxKTAnBgNVBAUTIDA2ODQyZjg0YmNiYWRiZDE5NjQwNWJmZDZhNjM0OWViMB4X
 DTcwMDEwMTAwMDAwMFoXDTQ4MDEwMTAwMDAwMFowHzEdMBsGA1UEAxMUQW5kcm9p
-ZCBLZXlzdG9yZSBLZXkwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAATpJu2WDUs3
-CQdchjiRWlWEuX/E76tWUgSyHy5ACloLBwmKhmb1WpKysWIv5FkwqxIW63gv6nwJ
-9TUOgB1tKvlDo4IBZDCCAWAwDgYDVR0PAQH/BAQDAgeAMIIBTAYKKwYBBAHWeQIB
-EQSCATwwggE4AgIBLAoBAgICASwKAQIEKmVkZ2UtdGVlLXBpeGVsNi1maXJzdC1h
-dHRlc3RhdGlvbi0yMDI2MDUyMAQAMFO/hT0IAgYBnkd7cfq/hUVDBEEwPzEZMBcE
-EmNvbS5lZGdldGVlLmF0dGVzdAIBADEiBCBgGFDZMM5wEyb0prZys7qeuouopBZP
-oXTl+69F3zmJOTCBpKEIMQYCAQICAQOiAwIBA6MEAgIBAKUFMQMCAQSqAwIBAb+D
-dwIFAL+FPgMCAQC/hUBMMEoEIA9udcgBg7XewHSwBU1CcemTievksTawgZ3h8VC6
-D/nXAQH/CgEABCDMPA5KtpJpxprOpafFePpTHD7Q3881lCeOYy3eOLAbv7+FQQUC
-AwJxAL+FQgUCAwMXbL+FTgYCBAE1JjW/hU8GAgQBNSY1MAoGCCqGSM49BAMCA0gA
-MEUCIA7qft7Tl/pcu8XmPMqsywIT/0jr9JjUZiH9lTw5bmKcAiEA1fU4ma8T0iG0
-SRpRnNO1ThvoOThXFU7mWmtW2r31n7Y=
+ZCBLZXlzdG9yZSBLZXkwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAS8YnOi5Wlo
+WusXTDc1aBTEswua9XP5ZDehhc0zlHtZjPfuC1zfvNjsrBzKMRHjYdrakr6BQdzW
+XQCtyQqYTtYQo4IBXzCCAVswDgYDVR0PAQH/BAQDAgMIMIIBRwYKKwYBBAHWeQIB
+EQSCATcwggEzAgIBLAoBAgICASwKAQIEImVkZ2UtdGVlLXBpeGVsNi1hZ3JlZS1r
+ZXktMjAyNjA1MjQEADBTv4U9CAIGAZ5a7daCv4VFQwRBMD8xGTAXBBJjb20uZWRn
+ZXRlZS5hdHRlc3QCAQAxIgQg4PSaBcDN495+QBVQ+6WXMEfHqDtVxEBr2VoOD/im
+Tn4wgaehCzEJAgECAgEDAgEGogMCAQOjBAICAQClBTEDAgEEqgMCAQG/g3cCBQC/
+hT4DAgEAv4VATDBKBCAPbnXIAYO13sB0sAVNQnHpk4nr5LE2sIGd4fFQug/51wEB
+/woBAAQgzDwOSraSacaazqWnxXj6Uxw+0N/PNZQnjmMt3jiwG7+/hUEFAgMCcQC/
+hUIFAgMDF2y/hU4GAgQBNSY1v4VPBgIEATUmNTAKBggqhkjOPQQDAgNHADBEAiBQ
++OPBjl/7I8DRUsWAhdAd++pqAf2XbZHpDv2GPE6dTgIgFxkZoklejh+K9TXxbgs9
+Q9p7JmoWchUw4HlsW4Xf/NY=
 -----END CERTIFICATE-----
 -----BEGIN CERTIFICATE-----
 MIICADCCAYWgAwIBAgIQVpokAbqSODCb2sAGwqwlHTAKBggqhkjOPQQDAjA/MRIw
