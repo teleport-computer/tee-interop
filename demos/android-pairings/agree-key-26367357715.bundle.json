@@ -1,0 +1,20 @@
+{
+  "protocol": "tee-interop/android-pair/v1",
+  "kdf": "HKDF-SHA256",
+  "kdf_info_utf8": "tee-interop/android-pair/v1",
+  "cipher": "AES-256-GCM",
+  "ecdh_curve": "secp256r1",
+  "attested_pubkey_spki_hex": "0x3059301306072a8648ce3d020106082a8648ce3d03010703420004bc6273a2e569685aeb174c37356814c4b30b9af573f96437a185cd33947b598cf7ee0b5cdfbcd8ecac1cca3111e361dada92be8141dcd65d00adc90a984ed610",
+  "ephemeral_pubkey_spki_hex": "0x3059301306072a8648ce3d020106082a8648ce3d0301070342000433a2789d6e65941573f81909ea1dc03fc1a3bd3aaf42d9f064855db82a30ee11b1dcd0d81f9322988ad48f9379b459bd99bfac0c5ac9a09642734f9884c11793",
+  "nonce_hex": "0xdefb6f55e1ff00a838a946fc",
+  "ciphertext_hex": "0x927e586658bdffbefd56bfdef39ce4df81761d26ec07c6ad12dc3e546589de111c757db117f82b2b624a656dac4c1bd2",
+  "plaintext_sha256_hex": "0x046fcff17564f6dc60d04f60fb0b92d92151c07d9adc80e8a7d2ab64949c5b97",
+  "plaintext_len": 32,
+  "leaf_cert_sha256_hex": "0x403629011ac082af05b86e75c5273761bf90e907f62f1d628fecd6d65faa8b50",
+  "context": {
+    "workflow_run_id": "26367357715",
+    "commit_sha": "0e977811beda5ba1cc418ea2bdfd6f635c7309e5",
+    "workflow_ref": "teleport-computer/tee-interop/.github/workflows/pair_with_pixel6.yml@refs/heads/main",
+    "created_at_utc": "2026-05-24T17:01:23.831031Z"
+  }
+}
