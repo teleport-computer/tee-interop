@@ -224,6 +224,45 @@ cosign verify-blob \
         <div class="note">A new bundle is produced every time the
             <a href="https://github.com/teleport-computer/tee-interop/actions/workflows/pair_with_pixel6.yml" target="_blank" rel="noopener">workflow</a>
             is dispatched. Trigger one by clicking "Run workflow" in the Actions tab.</div>
+
+        <hr>
+        <div style="display:flex; align-items:baseline; gap:10px;">
+            <b>Pixel-side recovery</b>
+            <span id="pixelRecoveryPill" class="pill warn">awaiting…</span>
+        </div>
+        <div id="pixelRecoveryAwaiting" class="note" style="margin-top:10px;">
+            No <code>decrypt_result.json</code> has been published next to the current bundle yet.
+            The Pixel runs <a href="https://github.com/teleport-computer/tee-interop/blob/main/pixel-attest/decrypt_pairing_apk.sh" target="_blank" rel="noopener">decrypt_pairing_apk.sh</a>:
+            it ECDH-AGREEs against the StrongBox-resident private key, HKDF-derives the same AES-256-GCM key the runner used, decrypts, hashes the plaintext, and writes the recovered SHA-256 only — the bytes never leave the device.
+        </div>
+        <div id="pixelRecoveryBody" style="display:none; margin-top:10px;">
+            <div class="row"><div class="k">decrypt result</div><div class="v"><a id="pixelResultLink" target="_blank" rel="noopener"></a></div></div>
+            <div class="row"><div class="k">device alias</div><div class="v" id="pixelAlias"></div></div>
+            <div class="row"><div class="k">expected sha256</div><div class="v hex" id="pixelExpectedHash"></div></div>
+            <div class="row"><div class="k">recovered sha256</div><div class="v hex" id="pixelRecoveredHash"></div></div>
+            <div class="row"><div class="k">verdict</div><div class="v" id="pixelVerdict"></div></div>
+            <div class="note" style="margin-top:8px;">
+                The recovered SHA-256 is produced inside the Pixel by hashing the plaintext that was recovered from the bundle's ciphertext using the StrongBox-held ECDH private key. A match proves that <i>this specific Pixel device</i> recovered the same bytes the GHA runner encrypted — the first time the two attestation anchors composed end-to-end with a publicly verifiable artifact on both sides.
+            </div>
+        </div>
+
+        <div id="pixelRecoveryReproduce" style="margin-top:14px;">
+            <details>
+                <summary style="cursor:pointer; color:var(--dim);">Reproduce this with your own Pixel</summary>
+                <pre style="background:#0c0d10; border:1px solid var(--border); border-radius:4px; padding:10px; overflow-x:auto; margin:8px 0; white-space:pre-wrap;">git clone https://github.com/teleport-computer/tee-interop &amp;&amp; cd tee-interop/pixel-attest
+export ANDROID_HOME=~/Android/Sdk            # sdkmanager "platforms;android-34" "build-tools;34.0.0"
+app/build.sh                                 # produces app/build/edgetee-attest.apk (~16 KB)
+
+# plug in your Pixel, accept the USB-debug RSA prompt:
+./grab_attestation_apk.sh "your-challenge-string"
+# → writes pixel_attestation_&lt;ts&gt;.pem + .info, runs the verifier
+
+# upload your PEM as test/fixtures/pixel6_strongbox.pem, push, trigger
+# pair_with_pixel6.yml from the Actions tab; then:
+./decrypt_pairing_apk.sh ../demos/android-pairings/&lt;new-bundle&gt;.bundle.json pixel_attestation_&lt;ts&gt;.info
+# → writes &lt;bundle&gt;.decrypt_result.json with match: true</pre>
+            </details>
+        </div>
     </div>
 </div>
 
@@ -538,8 +577,54 @@ async function fetchLatestPairing() {
 
         meta.style.display = "none";
         body.style.display = "";
+
+        // Try to fetch a companion decrypt_result.json. Path mirrors the bundle URL.
+        const decryptUrl = ptr.bundle_url.replace(/\.bundle\.json$/, ".decrypt_result.json");
+        fetchPixelDecryptResult(decryptUrl);
     } catch (e) {
         meta.innerHTML = `<span class="result-bad">failed to load pairing bundle: ${e.message || e}</span>`;
+    }
+}
+
+async function fetchPixelDecryptResult(url) {
+    const pill = $("pixelRecoveryPill");
+    const awaiting = $("pixelRecoveryAwaiting");
+    const body = $("pixelRecoveryBody");
+    try {
+        const resp = await fetch(url, {cache: "no-store"});
+        if (resp.status === 404) {
+            pill.textContent = "awaiting Pixel decrypt";
+            pill.className = "pill warn";
+            return;
+        }
+        if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+        const r = await resp.json();
+
+        $("pixelResultLink").textContent = url.split("/").slice(-1)[0];
+        $("pixelResultLink").href = url;
+        $("pixelAlias").textContent = r.alias || "?";
+        $("pixelExpectedHash").textContent  = r.expected_plaintext_sha256_hex || "";
+        $("pixelRecoveredHash").textContent = r.recovered_plaintext_sha256_hex || "";
+
+        if (r.match === true) {
+            pill.textContent = "✓ recovered, match";
+            pill.className = "pill";
+            $("pixelVerdict").innerHTML = `<span class="result-ok">✓ SHA-256 of plaintext recovered inside StrongBox matches the public commitment</span>`;
+        } else if (r.status === "ERROR") {
+            pill.textContent = "✗ decrypt error";
+            pill.className = "pill bad";
+            $("pixelVerdict").innerHTML = `<span class="result-bad">✗ ${r.error_class || ""}: ${r.error_message || ""}</span>`;
+        } else {
+            pill.textContent = "✗ mismatch";
+            pill.className = "pill bad";
+            $("pixelVerdict").innerHTML = `<span class="result-bad">✗ hash mismatch</span>`;
+        }
+        awaiting.style.display = "none";
+        body.style.display = "";
+    } catch (e) {
+        pill.textContent = "fetch error";
+        pill.className = "pill bad";
+        awaiting.innerHTML = `<span class="result-bad">could not fetch decrypt_result.json: ${e.message || e}</span>`;
     }
 }
 
