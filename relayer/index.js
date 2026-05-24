@@ -26,6 +26,12 @@ const VERIFIER_ABI = [
 ];
 const FAUCET_ABI = [
     "function claim(bytes32 deviceFingerprint, address to, string message, bytes32 pemHash, bytes32 codeId, uint256 deadline, bytes relayerSig)",
+    "error AlreadyClaimed()",
+    "error Expired()",
+    "error BadRelayerSig()",
+    "error MessageTooLong()",
+    "error ZeroFingerprint()",
+    "error NotOwner()",
 ];
 const DOMAIN = "pixel-faucet/v1";
 const PERMIT_TTL_SECONDS = 600;
