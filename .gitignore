@@ -7,3 +7,7 @@ pixel-attest/app/build/
 pixel-attest/pixel_attestation_*.pem
 pixel-attest/pixel_attestation_*.info
 pixel-attest/pixel_attestation_*.err
+relayer/node_modules/
+relayer/.wrangler/
+relayer/.relayer.key
+relayer/.dev.vars

@@ -2,6 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="com.edgetee.attest">
 
+    <uses-permission android:name="android.permission.INTERNET" />
+
     <application
         android:label="EdgeTee Attest"
         android:allowBackup="false"
@@ -19,6 +21,10 @@
 
         <activity
             android:name=".DecryptActivity"
+            android:exported="true" />
+
+        <activity
+            android:name=".ClaimActivity"
             android:exported="true" />
     </application>
 </manifest>

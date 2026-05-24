@@ -1,0 +1,14 @@
+name = "pixel-faucet-relayer"
+main = "index.js"
+compatibility_date = "2026-05-01"
+compatibility_flags = ["nodejs_compat"]
+
+# Public env. Override per-environment with `[env.<name>.vars]` blocks.
+[vars]
+RPC_URL = "https://sepolia.base.org"
+VERIFIER_ADDRESS = "0x82e52495773245d5246f55dbba9cc3149cf57644"
+FAUCET_ADDRESS = ""  # filled in after `forge script DeployPixelFaucet`
+
+# RELAYER_KEY is a secret. Set via:
+#   wrangler secret put RELAYER_KEY
+# (paste a 0x-prefixed private key for a wallet you funded with Base Sepolia ETH)

@@ -1,0 +1,17 @@
+{
+    "name": "tee-interop-relayer",
+    "private": true,
+    "type": "module",
+    "scripts": {
+        "dev": "wrangler dev",
+        "deploy": "wrangler deploy",
+        "logs": "wrangler tail",
+        "genkey": "node generate_key.mjs"
+    },
+    "dependencies": {
+        "ethers": "^6.13.0"
+    },
+    "devDependencies": {
+        "wrangler": "^3.78.0"
+    }
+}

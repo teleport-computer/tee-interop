@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Pixel wall · attested Pixels tagging the contract</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root {
+    --bg: #0c0d10;
+    --panel: #15171c;
+    --border: #2a2d36;
+    --text: #e6e6e8;
+    --dim: #8b8d96;
+    --accent: #6fcf97;
+    --warn: #f5a623;
+    --bad: #eb5757;
+    --link: #4ea4ff;
+}
+* { box-sizing: border-box; }
+body {
+    margin: 0; padding: 24px;
+    background: var(--bg); color: var(--text);
+    font: 14px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
+    max-width: 980px; margin-inline: auto;
+}
+h1 { font-size: 18px; margin: 0 0 4px; font-weight: 600; }
+h2 { font-size: 13px; margin: 24px 0 8px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
+.sub { color: var(--dim); margin-bottom: 24px; }
+.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 16px; margin-bottom: 16px; }
+.row { display: flex; gap: 12px; align-items: baseline; padding: 4px 0; }
+.row .k { color: var(--dim); min-width: 130px; flex-shrink: 0; }
+.row .v { color: var(--text); word-break: break-all; }
+a { color: var(--link); text-decoration: none; }
+a:hover { text-decoration: underline; }
+.pill { display: inline-block; padding: 2px 8px; border-radius: 999px; background: #1a3024; color: var(--accent); font-size: 11px; font-weight: 600; margin-left: 6px; }
+.pill.bad { background: #3a1818; color: var(--bad); }
+.pill.warn { background: #3a2c10; color: var(--warn); }
+.tag {
+    background: #0c0d10; border: 1px solid var(--border); border-radius: 6px;
+    padding: 14px; margin: 8px 0;
+}
+.tag .msg { font-size: 16px; color: var(--text); margin-bottom: 8px; word-break: break-word; }
+.tag .meta { font-size: 11px; color: var(--dim); display: flex; gap: 12px; flex-wrap: wrap; }
+.tag .meta code { color: var(--text); }
+.muted { color: var(--dim); }
+.hex { font-family: inherit; word-break: break-all; }
+.empty { color: var(--dim); padding: 24px; text-align: center; font-style: italic; }
+.note { font-size: 12px; color: var(--dim); margin-top: 8px; line-height: 1.6; }
+</style>
+</head>
+<body>
+
+<h1>The Pixel wall</h1>
+<div class="sub">
+    Every entry below is a real Pixel device that produced an Android Key Attestation chain rooted in Google's hardware root, then tagged this contract once. One claim per StrongBox attestation key.
+</div>
+
+<div class="panel">
+    <div class="row"><div class="k">Faucet</div>
+        <div class="v"><a id="faucetLink" target="_blank" rel="noopener"></a></div>
+    </div>
+    <div class="row"><div class="k">Total claims</div><div class="v" id="totalClaims">…</div></div>
+    <div class="row"><div class="k">Latest block</div><div class="v" id="blockNum">…</div></div>
+    <div class="row"><div class="k">Status</div><div class="v" id="status"><span class="muted">loading…</span></div></div>
+</div>
+
+<h2>Claim from your own Pixel</h2>
+<div class="panel" style="line-height:1.7;">
+    <p style="margin:0 0 10px 0;">Sideload the APK, then invoke ClaimActivity. No Play Store, no developer account — just <code>adb install</code>:</p>
+    <pre id="claimSnippet" style="background:#0c0d10; border:1px solid var(--border); border-radius:4px; padding:10px; overflow-x:auto; margin:8px 0; white-space:pre-wrap; font-size:12px;">…</pre>
+    <p class="note" style="margin:0;">The APK generates a fresh StrongBox-backed P-256 key with <code>setAttestationChallenge(SHA256("pixel-faucet/v1" || chainId || faucet || your_address || sha256(message)))</code>. The relayer at the URL above does the chain verification view-call against the <a id="verifierLink" target="_blank" rel="noopener">on-chain verifier</a> and submits the claim.</p>
+</div>
+
+<h2>Tags</h2>
+<div id="tags"></div>
+
+<script type="module">
+import { JsonRpcProvider, Contract, hexlify } from "https://esm.sh/ethers@6.13.0";
+
+const RPC = "https://sepolia.base.org";
+const FAUCET = "%FAUCET_ADDRESS%";
+const VERIFIER = "0x82e52495773245d5246f55dbba9cc3149cf57644";
+const RELAYER_URL = "%RELAYER_URL%";
+
+const ABI = [
+    "event Tagged(bytes32 indexed deviceFingerprint, address indexed to, string message, bytes32 pemHash, bytes32 codeId, uint256 timestamp)",
+    "function taggedCount() view returns (uint256)"
+];
+
+const $ = (id) => document.getElementById(id);
+const provider = new JsonRpcProvider(RPC);
+const faucet = new Contract(FAUCET, ABI, provider);
+
+$("faucetLink").textContent = FAUCET;
+$("faucetLink").href = `https://sepolia.basescan.org/address/${FAUCET}#events`;
+$("verifierLink").textContent = VERIFIER;
+$("verifierLink").href = `https://sepolia.basescan.org/address/${VERIFIER}`;
+
+$("claimSnippet").textContent = `adb install edgetee-attest.apk
+
+adb shell am start -n com.edgetee.attest/.ClaimActivity \\
+  -e to "0xYourWalletAddress" \\
+  -e message "hi from my pixel" \\
+  -e chain_id 84532 \\
+  -e faucet "${FAUCET}" \\
+  -e relayer "${RELAYER_URL}"
+
+adb pull /sdcard/Android/data/com.edgetee.attest/files/claim_result.json
+`;
+
+function fmtTimestamp(ts) {
+    const d = new Date(Number(ts) * 1000);
+    return d.toISOString().replace("T", " ").slice(0, 19) + "Z";
+}
+
+function trunc(s, head=10, tail=8) {
+    if (!s || s.length <= head + tail + 3) return s;
+    return s.slice(0, head) + "…" + s.slice(-tail);
+}
+
+function escapeHtml(s) {
+    return String(s).replace(/[&<>"']/g, (c) => ({
+        "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"
+    }[c]));
+}
+
+function renderTags(events) {
+    const box = $("tags");
+    if (!events.length) {
+        box.innerHTML = `<div class="empty">No tags yet — be the first.</div>`;
+        return;
+    }
+    // newest first
+    events.sort((a, b) => Number(b.args.timestamp) - Number(a.args.timestamp));
+    box.innerHTML = events.map((e) => {
+        const txUrl = `https://sepolia.basescan.org/tx/${e.transactionHash}`;
+        const toUrl = `https://sepolia.basescan.org/address/${e.args.to}`;
+        return `<div class="tag">
+            <div class="msg">${escapeHtml(e.args.message) || '<span class="muted">(no message)</span>'}</div>
+            <div class="meta">
+                <span>from <a href="${toUrl}" target="_blank" rel="noopener"><code>${trunc(e.args.to, 8, 6)}</code></a></span>
+                <span>device <code title="${e.args.deviceFingerprint}">${trunc(e.args.deviceFingerprint, 10, 8)}</code></span>
+                <span><a href="${txUrl}" target="_blank" rel="noopener">tx ${trunc(e.transactionHash, 10, 8)}</a></span>
+                <span>${fmtTimestamp(e.args.timestamp)}</span>
+            </div>
+        </div>`;
+    }).join("");
+}
+
+async function refresh() {
+    try {
+        const [count, blockNum] = await Promise.all([
+            faucet.taggedCount(),
+            provider.getBlockNumber(),
+        ]);
+        $("totalClaims").textContent = count.toString();
+        $("blockNum").textContent = blockNum.toLocaleString();
+
+        // Fetch all Tagged events
+        const filter = faucet.filters.Tagged();
+        const events = await faucet.queryFilter(filter, 0);
+        renderTags(events);
+        $("status").innerHTML = `<span class="muted">${events.length} tags · last refresh ${new Date().toISOString().slice(11,19)}Z</span>`;
+    } catch (e) {
+        $("status").innerHTML = `<span style="color:var(--bad)">${e.shortMessage || e.message || e}</span>`;
+    }
+}
+
+refresh();
+setInterval(refresh, 15000);
+</script>
+</body>
+</html>
