@@ -156,9 +156,17 @@ async function refresh() {
         $("totalClaims").textContent = count.toString();
         $("blockNum").textContent = blockNum.toLocaleString();
 
-        // Fetch all Tagged events
+        // Fetch all Tagged events in 1900-block chunks (Base Sepolia RPC
+        // caps eth_getLogs at 2000 blocks/call).
+        const FAUCET_DEPLOY_BLOCK = 41940000;
         const filter = faucet.filters.Tagged();
-        const events = await faucet.queryFilter(filter, 0);
+        const events = [];
+        const STEP = 1900;
+        for (let from = FAUCET_DEPLOY_BLOCK; from <= blockNum; from += STEP) {
+            const to = Math.min(blockNum, from + STEP - 1);
+            const chunk = await faucet.queryFilter(filter, from, to);
+            events.push(...chunk);
+        }
         renderTags(events);
         $("status").innerHTML = `<span class="muted">${events.length} tags · last refresh ${new Date().toISOString().slice(11,19)}Z</span>`;
     } catch (e) {

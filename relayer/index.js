@@ -131,18 +131,29 @@ export default {
         if (await faucetView.claimed(deviceFingerprint)) {
             let originalTagged = null;
             try {
-                const evs = await faucetView.queryFilter(
-                    faucetView.filters.Tagged(deviceFingerprint), 0,
-                );
-                if (evs.length) {
-                    const e = evs[0];
-                    originalTagged = {
-                        txHash: e.transactionHash,
-                        to: e.args.to,
-                        message: e.args.message,
-                        timestamp: Number(e.args.timestamp),
-                        explorer: `https://sepolia.basescan.org/tx/${e.transactionHash}`,
-                    };
+                // Base Sepolia RPC limits eth_getLogs to 2000 blocks/call.
+                // Walk back in 1900-block chunks until we find the Tagged event
+                // (or hit the configured deploy block).
+                const fromFloor = Number(env.FAUCET_DEPLOY_BLOCK ?? 0);
+                const head = await provider.getBlockNumber();
+                const STEP = 1900;
+                for (let to = head; to >= fromFloor; to -= STEP) {
+                    const from = Math.max(fromFloor, to - STEP + 1);
+                    const evs = await faucetView.queryFilter(
+                        faucetView.filters.Tagged(deviceFingerprint), from, to,
+                    );
+                    if (evs.length) {
+                        const e = evs[0];
+                        originalTagged = {
+                            txHash: e.transactionHash,
+                            to: e.args.to,
+                            message: e.args.message,
+                            timestamp: Number(e.args.timestamp),
+                            explorer: `https://sepolia.basescan.org/tx/${e.transactionHash}`,
+                        };
+                        break;
+                    }
+                    if (from === fromFloor) break;
                 }
             } catch (_) {}
             return json({

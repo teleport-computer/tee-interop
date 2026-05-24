@@ -8,6 +8,7 @@ compatibility_flags = ["nodejs_compat"]
 RPC_URL = "https://sepolia.base.org"
 VERIFIER_ADDRESS = "0x82e52495773245d5246f55dbba9cc3149cf57644"
 FAUCET_ADDRESS = "0xd7231e7af5f5f5457cb13191240749e7bf3bae5a"
+FAUCET_DEPLOY_BLOCK = "41940000"
 
 # RELAYER_KEY is a secret. Set via:
 #   wrangler secret put RELAYER_KEY
