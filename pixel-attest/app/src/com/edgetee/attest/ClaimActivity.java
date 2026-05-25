@@ -94,7 +94,20 @@ public class ClaimActivity extends Activity {
             body.put("to", to);
             body.put("message", message);
 
-            HttpResponse resp = postJson(relayerUrl, body.toString());
+            // Android forbids network on the main thread. Spawn a worker
+            // and wait for it (this activity is one-shot headless anyway).
+            final String bodyStr = body.toString();
+            final String relayerUrlF = relayerUrl;
+            final HttpResponse[] respBox = new HttpResponse[1];
+            final Exception[] errBox = new Exception[1];
+            Thread t = new Thread(() -> {
+                try { respBox[0] = postJson(relayerUrlF, bodyStr); }
+                catch (Exception ex) { errBox[0] = ex; }
+            });
+            t.start();
+            t.join();
+            if (errBox[0] != null) throw errBox[0];
+            HttpResponse resp = respBox[0];
             Log.i(TAG, "relayer status=" + resp.code + " len=" + resp.body.length());
 
             result.put("status", resp.code == 200 ? "OK" : "RELAYER_ERROR");
