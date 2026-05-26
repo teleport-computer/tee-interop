@@ -1,5 +1,15 @@
 # Android attestation demo
 
+> **RETRACTED (2026-05-26).** The "a real Pixel ran our APK" claim below is
+> false: Android Key Attestation binds the app's *signer*, never its code. An
+> evil twin (same package + signer) produces a byte-identical attestation, and
+> StrongBox key non-extractability gives the exchanged secret no confidentiality
+> (any code under the app identity can use the key). This is a device-authenticity
+> root, not a code-attesting TEE — ERC-733 Stage 0 for code integrity. See
+> [`../../docs/android/README.md`](../../docs/android/README.md) and
+> `edge-tee/pixel-attest/NOTES-attestation-does-not-bind-code.md`. The artifacts
+> below remain real *cert-chain* + Sigstore records; they just do not attest code.
+
 Each verified record in `verified/issue-N.*` is the result of a real Pixel
 attestation that was verified by a GitHub-hosted workflow run, then
 keyless-signed via Sigstore using the workflow's GitHub OIDC identity.
