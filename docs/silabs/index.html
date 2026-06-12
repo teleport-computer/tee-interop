@@ -5,32 +5,35 @@
 <title>SiLabs SiMG301 · on-chain attestation</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-:root{--bg:#0c0d10;--panel:#15171c;--border:#2a2d36;--text:#e6e6e8;--dim:#8b8d96;--accent:#6fcf97;--warn:#f5a623;--bad:#eb5757;--link:#4ea4ff}
+:root{--bg:#ffffff;--panel:#f7f8fa;--border:#e3e6ea;--text:#1b1f24;--dim:#5b626b;--accent:#0a7d3f;--accent-bg:#e8f5ec;--warn:#9a6700;--warn-bg:#fff5e0;--bad:#b42318;--link:#0a59c2}
 *{box-sizing:border-box}
-body{margin:0;padding:28px 20px;background:var(--bg);color:var(--text);font:14px/1.6 ui-monospace,"SF Mono",Menlo,monospace;max-width:880px;margin-inline:auto}
-h1{font-size:20px;margin:0 0 4px;font-weight:600}
-h2{font-size:12px;margin:30px 0 10px;color:var(--dim);text-transform:uppercase;letter-spacing:.09em;font-weight:600}
-.sub{color:var(--dim);margin:0 0 22px}
+body{margin:0;padding:32px 20px;background:var(--bg);color:var(--text);
+  font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  max-width:760px;margin-inline:auto}
+h1{font-size:23px;line-height:1.3;margin:0 0 6px;font-weight:680;letter-spacing:-.01em}
+h2{font-size:12px;margin:32px 0 10px;color:var(--dim);text-transform:uppercase;letter-spacing:.07em;font-weight:680}
+.sub{color:var(--dim);margin:0 0 24px;font-size:16px}
 p{margin:0 0 12px}
-.panel{background:var(--panel);border:1px solid var(--border);border-radius:8px;padding:16px;margin-bottom:14px}
-.row{display:flex;gap:12px;align-items:baseline;padding:3px 0}
-.row .k{color:var(--dim);min-width:150px;flex-shrink:0}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:14px}
+.row{display:flex;gap:12px;align-items:baseline;padding:4px 0;border-bottom:1px solid var(--border)}
+.row:last-child{border-bottom:none}
+.row .k{color:var(--dim);min-width:150px;flex-shrink:0;font-size:13px}
 .row .v{color:var(--text);word-break:break-all}
 a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
-code{color:var(--accent)}
-.pill{display:inline-block;padding:2px 9px;border-radius:999px;background:#1a3024;color:var(--accent);font-size:11px;font-weight:600;margin-left:6px}
-.pill.warn{background:#3a2c10;color:var(--warn)}
-.pill.bad{background:#3a1818;color:var(--bad)}
+code,.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:.92em}
+code{color:#0b5b2e;background:var(--accent-bg);padding:1px 5px;border-radius:4px}
+.pill{display:inline-block;padding:2px 9px;border-radius:999px;background:var(--accent-bg);color:var(--accent);font-size:11px;font-weight:700;letter-spacing:.02em}
+.pill.warn{background:var(--warn-bg);color:var(--warn)}
 .dim{color:var(--dim)}
-button{font:inherit;background:#1a3024;color:var(--accent);border:1px solid #2c5040;border-radius:6px;padding:10px 16px;cursor:pointer}
-button:hover{background:#214031}button:disabled{opacity:.5;cursor:default}
-.chain{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:6px 0 2px}
-.chain .node{background:#0c0d10;border:1px solid var(--border);border-radius:6px;padding:8px 11px;font-size:12px}
+button{font:inherit;font-weight:600;background:var(--accent);color:#fff;border:none;border-radius:7px;padding:11px 18px;cursor:pointer}
+button:hover{background:#096b36}button:disabled{opacity:.5;cursor:default}
+.chain{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin:4px 0}
+.chain .node{background:#fff;border:1px solid var(--border);border-radius:7px;padding:8px 11px;font-size:12.5px}
 .chain .arr{color:var(--dim)}
-.out{white-space:pre-wrap;background:#0c0d10;border:1px solid var(--border);border-radius:6px;padding:12px;margin-top:10px;font-size:12.5px;min-height:20px}
-.ok{color:var(--accent)}.warnc{color:var(--warn)}.badc{color:var(--bad)}
+.out{font-family:ui-monospace,Menlo,monospace;white-space:pre-wrap;background:#fff;border:1px solid var(--border);border-radius:8px;padding:13px;margin-top:12px;font-size:12.5px;min-height:20px;line-height:1.55}
+.ok{color:var(--accent);font-weight:600}.warnc{color:var(--warn)}.badc{color:var(--bad)}
 small{color:var(--dim)}
-hr{border:none;border-top:1px solid var(--border);margin:26px 0}
+hr{border:none;border-top:1px solid var(--border);margin:28px 0}
 </style>
 </head>
 <body>
@@ -52,12 +55,12 @@ no NDA, no vendor portal. We do that check, and the signature check, <b>inside a
 <h2>The identity chain (verified offline, byte‑for‑byte)</h2>
 <div class="panel">
 <div class="chain">
-<span class="node">SE leaf<br><small>EUI:20A716FFFEB31DAE</small></span><span class="arr">←</span>
+<span class="node">SE leaf<br><small class="mono">EUI:20A716FFFEB31DAE</small></span><span class="arr">←</span>
 <span class="node">Batch 1237800</span><span class="arr">←</span>
 <span class="node">Factory</span><span class="arr">←</span>
-<span class="node">Device Root CA<br><small>serial 12E6A2A5…</small></span>
+<span class="node">Device Root CA<br><small class="mono">serial 12E6A2A5…</small></span>
 </div>
-<p style="margin:8px 0 0"><small>Each link is an ECDSA P‑256/SHA‑256 signature. The root is self‑signed,
+<p style="margin:10px 0 0"><small>Each link is an ECDSA P‑256/SHA‑256 signature. The root is self‑signed,
 published by Silicon Labs (SHA‑256 <code>dbf5f0b3…72153</code>), and pinned in the verifier contract.
 The leaf's EUI matches the chip's hardware unique ID.</small></p>
 </div>
@@ -65,10 +68,10 @@ The leaf's EUI matches the chip's hardware unique ID.</small></p>
 <h2>What the chip actually signed</h2>
 <div class="panel">
 <div class="row"><div class="k">part</div><div class="v">SiMG301M104LIL · board BRD2719A · SE firmware 3.3.2</div></div>
-<div class="row"><div class="k">EAT profile</div><div class="v">PSA_IOT_PROFILE_1</div></div>
+<div class="row"><div class="k">EAT profile</div><div class="v mono">PSA_IOT_PROFILE_1</div></div>
 <div class="row"><div class="k">code measurement</div><div class="v"><code>0x830385b8…c42fe6</code> <span class="dim">(claim ‑75006: the SE PRoT firmware hash)</span></div></div>
 <div class="row"><div class="k">device key</div><div class="v"><code>0x0460af6e…72ad8a</code></div></div>
-<div class="row"><div class="k">signature</div><div class="v">ECDSA P‑256, verified by us with pycose <span class="dim">and</span> on‑chain below</div></div>
+<div class="row"><div class="k">signature</div><div class="v">ECDSA P‑256, verified with pycose <span class="dim">and</span> on‑chain below</div></div>
 </div>
 
 <h2>Verify it yourself — right now, in your browser</h2>
@@ -79,8 +82,7 @@ check (Base's native RIP‑7212 precompile), confirms the Silicon Labs root is a
 attested identity. No wallet, no gas — just a public RPC call from this page.</p>
 <button id="verifyBtn">▶ verify SiMG301 attestation on‑chain</button>
 <div class="out dim" id="verifyOut">idle</div>
-<p style="margin:10px 0 0"><small>Contract:
-<a id="verifierLink" target="_blank" rel="noopener"></a></small></p>
+<p style="margin:11px 0 0"><small>Contract: <a id="verifierLink" target="_blank" rel="noopener" class="mono"></a></small></p>
 </div>
 
 <h2>It's a peer in a multi‑vendor TEE registry</h2>
@@ -90,30 +92,29 @@ attested identity. No wallet, no gas — just a public RPC call from this page.<
 <b>Phala dstack confidential VM</b> (an Intel‑TDX cloud TEE): an edge microcontroller and a datacenter
 enclave, each proven by its own verifier, side by side.</p>
 <div class="out dim" id="bridgeOut">loading members…</div>
-<p style="margin:10px 0 0"><small>Registry:
-<a id="bridgeLink" target="_blank" rel="noopener"></a></small></p>
+<p style="margin:11px 0 0"><small>Registry: <a id="bridgeLink" target="_blank" rel="noopener" class="mono"></a></small></p>
 </div>
 
 <h2>What this proves — and what it doesn't (yet)</h2>
 <div class="panel">
 <p><span class="pill">proven</span> The token was signed by a genuine Silicon Labs SE whose key chains to
 the published root; the signature verifies on‑chain; the chip is a live registry member.</p>
-<p><span class="pill warn">dev mode</span> Secure boot is <b>not</b> yet enabled on this part (no irreversible
+<p style="margin-top:14px"><span class="pill warn">dev mode</span> Secure boot is <b>not</b> yet enabled on this part (no irreversible
 OTP burn), so the measurement is the SE's own firmware hash (<code>PRoT</code>), not the application hash.
 With secure boot on, the same token carries an <code>ARoT</code> entry = SHA‑256 of the operator's app — and
 nothing else in this pipeline changes. The verifier flags dev‑mode explicitly rather than hiding it.</p>
-<p><small>Trust model: you trust Silicon Labs as the silicon manufacturer (the root of the cert chain).
+<p style="margin-bottom:0"><small>Trust model: you trust Silicon Labs as the silicon manufacturer (the root of the cert chain).
 You do <b>not</b> trust the operator, a cloud, or any server — the check runs in a public contract.</small></p>
 </div>
 
 <hr>
 <p><small>Hardware bring‑up, the verifier, and the cross‑platform interop write‑up live in
-<a href="https://github.com/" id="repoLink" target="_blank" rel="noopener">the tee‑interop repo</a>
+<a href="https://github.com/teleport-computer/tee-interop" id="repoLink" target="_blank" rel="noopener">the tee‑interop repo</a>
 (<code>contracts/SilabsVerifier.sol</code>, <code>tools/silabs/build_proof.py</code>,
 <code>INTEROP-silabs-dstack.md</code>). Attestation token and certificates captured from real silicon.</small></p>
 
 <script type="module">
-import { JsonRpcProvider, Contract, AbiCoder } from "https://esm.sh/ethers@6.13.0";
+import { JsonRpcProvider, Contract } from "https://esm.sh/ethers@6.13.0";
 
 const RPC = "https://sepolia.base.org";
 const SILABS_VERIFIER = "0x857A6E8810E30e63f5B544180E2F5a139d50351b";
@@ -121,7 +122,6 @@ const BRIDGE = "0x46f9bF18AE0caeF4C4b78c6aAb4064a8a7504d18";
 const SILABS_MEMBER = "0x4af324d332bb7844d16c9aac396245414edb1d477fae21d900bfc8df203b1718";
 const DSTACK_MEMBER = "0x63ca256008edd395c03f57e4086c0417e19e19bf2ba7cab218e112b2c6b37307";
 const EXPECTED_CODE = "0x830385b853d384f713df1bcbf1c5ec7daafce7d4fa783b7220410e3606c42fe6";
-// the real attestation proof captured from the SiMG301 (abi-encoded)
 const PROOF = "0x00000000000000000000000000000000000000000000000000000000000001004a8c0f23c958ddee62bbc38c9966ee74917e85c4a16ff3881d4ec0cb7f460fb5762e8755e155b2db46d38e97009be038af43a0981a3e0ef1bce8874bcc078492e91be9c86e69b6c089bbe9b5e8fa4ed76d2115db3d909921db37d241603ee0e2830385b853d384f713df1bcbf1c5ec7daafce7d4fa783b7220410e3606c42fe600000000000000000000000000000000000000000000000000000000000001800000000000000000000000000000000000000000000000000000000000000000dbf5f0b3b3fded073c5f19289548e626adcb1f8f5346b93351c2d5775fa7215300000000000000000000000000000000000000000000000000000000000000410460af6eb5b0dc7a3b432bb45d1a18839e4a8546e2b322e3e0daede8289b30679cd01cb79c98686751ccdeb5125cf427e845879bc294422021620d40cc3e72ad8a0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000402e3e3885fa2bcb98f28fcd43927df604c288406d23304ea957649ebad35b9ea43ce3b5caf45a8103d98628a58cea3ef7d323818e8df305527e5730b188634dd1";
 
 const VERIFIER_ABI = ["function verify(bytes) view returns (bytes32 codeId, bytes pubkey, bytes userData)"];
@@ -138,7 +138,6 @@ $("verifierLink").textContent = SILABS_VERIFIER;
 $("verifierLink").href = `https://sepolia.basescan.org/address/${SILABS_VERIFIER}`;
 $("bridgeLink").textContent = BRIDGE;
 $("bridgeLink").href = `https://sepolia.basescan.org/address/${BRIDGE}`;
-$("repoLink").href = "https://github.com/amiller/tee-interop";
 
 $("verifyBtn").onclick = async () => {
   const out = $("verifyOut"); const btn = $("verifyBtn");
