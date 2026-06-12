@@ -34,12 +34,20 @@ button:hover{background:#096b36}button:disabled{opacity:.5;cursor:default}
 .ok{color:var(--accent);font-weight:600}.warnc{color:var(--warn)}.badc{color:var(--bad)}
 small{color:var(--dim)}
 hr{border:none;border-top:1px solid var(--border);margin:28px 0}
+.hero{margin:8px 0 24px;border-radius:14px;overflow:hidden;border:1px solid var(--border);background:linear-gradient(135deg,#f3f6fb,#eef2f7);box-shadow:0 10px 34px rgba(20,30,55,.10)}
+.hero img{width:100%;display:block}
+.hero .cap{padding:10px 15px;font-size:12.5px;color:var(--dim);border-top:1px solid var(--border);background:#fff}
 </style>
 </head>
 <body>
 
 <h1>A $40 Silicon Labs chip that proves what code it runs — on-chain</h1>
 <p class="sub">Live attestation from a real <b>SiMG301</b> Secure Vault, verified in your browser against a contract on Base Sepolia.</p>
+
+<div class="hero">
+<img src="./img/board.jpg" alt="Silicon Labs SixG301 Explorer Kit (BRD2719A) with the SiMG301 Secure Vault SoC, two LEDs and two buttons, on-board SEGGER J-Link">
+<div class="cap">The actual hardware: <b>SixG301 Explorer Kit · BRD2719A</b> — a <code>SiMG301M104LIL</code> Secure Vault SoC on the Cortex‑M33, on‑board SEGGER J‑Link. This exact unit, EUI <code>20a716fffeb31dae</code>, signed the attestation below.</div>
+</div>
 
 <div class="panel">
 <p>This is a <b>Silicon Labs SiMG301M104LIL</b> — a Series&nbsp;3 “Secure Vault High” wireless SoC,
