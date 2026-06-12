@@ -69,7 +69,7 @@ The leaf's EUI matches the chip's hardware unique ID.</small></p>
 <div class="panel">
 <div class="row"><div class="k">part</div><div class="v">SiMG301M104LIL · board BRD2719A · SE firmware 3.3.2</div></div>
 <div class="row"><div class="k">EAT profile</div><div class="v mono">PSA_IOT_PROFILE_1</div></div>
-<div class="row"><div class="k">code measurement</div><div class="v"><code>0x830385b8…c42fe6</code> <span class="dim">(claim ‑75006: the SE PRoT firmware hash)</span></div></div>
+<div class="row"><div class="k">code measurement</div><div class="v"><code>0x9aeba9ff…662efe5e</code> <span class="dim">(claim ‑75006 <code>ARoT</code>: SHA‑256 of the application)</span></div></div>
 <div class="row"><div class="k">device key</div><div class="v"><code>0x0460af6e…72ad8a</code></div></div>
 <div class="row"><div class="k">signature</div><div class="v">ECDSA P‑256, verified with pycose <span class="dim">and</span> on‑chain below</div></div>
 </div>
@@ -95,14 +95,15 @@ enclave, each proven by its own verifier, side by side.</p>
 <p style="margin:11px 0 0"><small>Registry: <a id="bridgeLink" target="_blank" rel="noopener" class="mono"></a></small></p>
 </div>
 
-<h2>What this proves — and what it doesn't (yet)</h2>
+<h2>What this proves</h2>
 <div class="panel">
 <p><span class="pill">proven</span> The token was signed by a genuine Silicon Labs SE whose key chains to
-the published root; the signature verifies on‑chain; the chip is a live registry member.</p>
-<p style="margin-top:14px"><span class="pill warn">dev mode</span> Secure boot is <b>not</b> yet enabled on this part (no irreversible
-OTP burn), so the measurement is the SE's own firmware hash (<code>PRoT</code>), not the application hash.
-With secure boot on, the same token carries an <code>ARoT</code> entry = SHA‑256 of the operator's app — and
-nothing else in this pipeline changes. The verifier flags dev‑mode explicitly rather than hiding it.</p>
+the published root; the signature verifies on‑chain; the chip is a live registry member, recorded by the
+SHA‑256 of the exact application it booted.</p>
+<p style="margin-top:14px"><span class="pill">secure boot on</span> Secure boot is enabled on this part: the
+immutable Secure Element verifies and measures the operator‑signed application at boot and reports its
+SHA‑256 as the <code>ARoT</code> claim. Update the app and re‑sign, and the measurement follows it — this is
+genuine, <b>updatable</b> code attestation, not a frozen image.</p>
 <p style="margin-bottom:0"><small>Trust model: you trust Silicon Labs as the silicon manufacturer (the root of the cert chain).
 You do <b>not</b> trust the operator, a cloud, or any server — the check runs in a public contract.</small></p>
 </div>
@@ -118,11 +119,11 @@ import { JsonRpcProvider, Contract } from "https://esm.sh/ethers@6.13.0";
 
 const RPC = "https://sepolia.base.org";
 const SILABS_VERIFIER = "0x857A6E8810E30e63f5B544180E2F5a139d50351b";
-const BRIDGE = "0x46f9bF18AE0caeF4C4b78c6aAb4064a8a7504d18";
+const BRIDGE = "0x31F8e4cf395dcffc6596AE31885FD1E73d6932fa";
 const SILABS_MEMBER = "0x4af324d332bb7844d16c9aac396245414edb1d477fae21d900bfc8df203b1718";
 const DSTACK_MEMBER = "0x63ca256008edd395c03f57e4086c0417e19e19bf2ba7cab218e112b2c6b37307";
-const EXPECTED_CODE = "0x830385b853d384f713df1bcbf1c5ec7daafce7d4fa783b7220410e3606c42fe6";
-const PROOF = "0x00000000000000000000000000000000000000000000000000000000000001004a8c0f23c958ddee62bbc38c9966ee74917e85c4a16ff3881d4ec0cb7f460fb5762e8755e155b2db46d38e97009be038af43a0981a3e0ef1bce8874bcc078492e91be9c86e69b6c089bbe9b5e8fa4ed76d2115db3d909921db37d241603ee0e2830385b853d384f713df1bcbf1c5ec7daafce7d4fa783b7220410e3606c42fe600000000000000000000000000000000000000000000000000000000000001800000000000000000000000000000000000000000000000000000000000000000dbf5f0b3b3fded073c5f19289548e626adcb1f8f5346b93351c2d5775fa7215300000000000000000000000000000000000000000000000000000000000000410460af6eb5b0dc7a3b432bb45d1a18839e4a8546e2b322e3e0daede8289b30679cd01cb79c98686751ccdeb5125cf427e845879bc294422021620d40cc3e72ad8a0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000402e3e3885fa2bcb98f28fcd43927df604c288406d23304ea957649ebad35b9ea43ce3b5caf45a8103d98628a58cea3ef7d323818e8df305527e5730b188634dd1";
+const EXPECTED_CODE = "0x9aeba9ff5301916f82205553e0faedbe4909d30e531cd7138325dbfe662efe5e";
+const PROOF = "0x0000000000000000000000000000000000000000000000000000000000000100239bb56406227968a85c21b99c4f5a8448bc08415d6098ca06dafe8ec410440f9be64356e91ae1eb28cbed1b3d545049752c00921942737b5c8df5ea69c2aa882bd4738cccf1baa5824c84ed192ec995cb5c53aae1ed96acb16fd273c571d70b9aeba9ff5301916f82205553e0faedbe4909d30e531cd7138325dbfe662efe5e00000000000000000000000000000000000000000000000000000000000001800000000000000000000000000000000000000000000000000000000000000001dbf5f0b3b3fded073c5f19289548e626adcb1f8f5346b93351c2d5775fa7215300000000000000000000000000000000000000000000000000000000000000410460af6eb5b0dc7a3b432bb45d1a18839e4a8546e2b322e3e0daede8289b30679cd01cb79c98686751ccdeb5125cf427e845879bc294422021620d40cc3e72ad8a000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000040a4327ccd73fb6cb043d20b1ff113db1b9e32cba5907b2e6f6d38d65e4cd78a593e681adf58688f5620ae645ae610cba3e40215b5851983d978732e6e6afdf5c3";
 
 const VERIFIER_ABI = ["function verify(bytes) view returns (bytes32 codeId, bytes pubkey, bytes userData)"];
 const BRIDGE_ABI = [
@@ -150,9 +151,9 @@ $("verifyBtn").onclick = async () => {
     out.innerHTML =
       `<span class="ok">✓ signature verified on-chain (native P-256 precompile)</span>\n` +
       `codeId  = ${codeId}\n` +
-      `          ${match ? '<span class="ok">↑ matches the SE PRoT firmware measurement</span>' : '<span class="badc">↑ unexpected</span>'}\n` +
+      `          ${match ? '<span class="ok">↑ SHA-256 of the application running on the chip (ARoT)</span>' : '<span class="badc">↑ unexpected</span>'}\n` +
       `device  = ${trunc(pubkey,14,12)}\n\n` +
-      `<span class="dim">The chip's factory-signed attestation just verified in a public contract, from your browser.</span>`;
+      `<span class="dim">The chip's factory-signed attestation of its own application code just verified in a public contract, from your browser.</span>`;
   } catch (e) {
     out.className = "out badc"; out.textContent = "error: " + (e.shortMessage || e.message || e);
   } finally { btn.disabled = false; }

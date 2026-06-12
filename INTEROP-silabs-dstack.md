@@ -7,7 +7,7 @@ Two different-vendor TEEs registered as peers in one on-chain registry on **Base
 
 | Contract | Address |
 |---|---|
-| TEEBridge | `0x46f9bF18AE0caeF4C4b78c6aAb4064a8a7504d18` |
+| TEEBridge | `0x31F8e4cf395dcffc6596AE31885FD1E73d6932fa` |
 | SilabsVerifier | `0x857A6E8810E30e63f5B544180E2F5a139d50351b` |
 | DstackVerifier | `0x296845C8784abd5F9e329C9d8DDd849064057C65` |
 
@@ -15,8 +15,12 @@ Two different-vendor TEEs registered as peers in one on-chain registry on **Base
 
 | Member | codeId | Verifier | Root anchor |
 |---|---|---|---|
-| **SiLabs SiMG301** (edge MCU, BRD2719A) | `0x830385b8…c42fe6` (PRoT measurement) | SilabsVerifier | SiLabs Device Root CA `dbf5f0b3…` |
+| **SiLabs SiMG301** (edge MCU, BRD2719A) | `0x9aeba9ff…662efe5e` (**ARoT** = app SHA-256, secure boot ON) | SilabsVerifier | SiLabs Device Root CA `dbf5f0b3…` |
 | **dstack tee-daemon** (Phala TDX CVM) | `0x915c8197…` (CVM app-id) | DstackVerifier | Phala KMS root `0xd5bdeb03…` |
+
+Secure boot was provisioned on the SiMG301 (2026-06-12): the SE measures the operator-signed app into the
+EAT `-75006` `ARoT` claim, so the member's codeId is the live SHA-256 of the application it boots. Update +
+re-sign the app and the measurement follows it.
 
 Both `TEEBridge.isMember(...) == true`. Member ids:
 - SiLabs `0x4af324d3…`, dstack `0x63ca2560…`.
@@ -39,7 +43,7 @@ EIP-191 ownership) and serves it at `/proof`. On-chain: `DstackVerifier` recover
 
 ```bash
 # show both members live
-BRIDGE=0x46f9bF18AE0caeF4C4b78c6aAb4064a8a7504d18
+BRIDGE=0x31F8e4cf395dcffc6596AE31885FD1E73d6932fa
 RPC=https://sepolia.base.org
 cast call --rpc-url $RPC $BRIDGE 'isMember(bytes32)(bool)' 0x4af324d332bb7844d16c9aac396245414edb1d477fae21d900bfc8df203b1718  # SiLabs
 cast call --rpc-url $RPC $BRIDGE 'isMember(bytes32)(bool)' 0x63ca256008edd395c03f57e4086c0417e19e19bf2ba7cab218e112b2c6b37307  # dstack
