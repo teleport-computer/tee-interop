@@ -1,0 +1,35 @@
+# dstack compose for Pixel 6a attestation verifier demo.
+#
+# Runs in MOCK mode by default (no phone attached to CVM).
+# The /api/submit endpoint accepts attestation bundles from a live phone.
+#
+# Deploy:
+#   PIXEL_ATTEST_COMMIT=<full-sha> dstack deploy -n pixel-attest -c tdx-compose.yaml
+
+services:
+  pixel-attest:
+    image: docker.io/dstacktee/git-launcher@sha256:4437dce18ec713b0991d34bd926d324966b1a0b90fad485b8ddb3f4ed2af138b
+    command: ["/etc/git-launcher/pixel-attest.conf"]
+    ports:
+      - "5360:5360"
+    configs:
+      - source: launcher-conf
+        target: /etc/git-launcher/pixel-attest.conf
+    environment:
+      PIXEL_ATTEST_COMMIT: ${PIXEL_ATTEST_COMMIT:?set PIXEL_ATTEST_COMMIT to the audited commit SHA}
+      PIXEL_MOCK: "1"
+    volumes:
+      - checkout:/var/lib/git-launcher
+      - /var/run/dstack.sock:/var/run/dstack.sock
+    restart: unless-stopped
+
+configs:
+  launcher-conf:
+    content: |
+      REPO_URL=https://github.com/teleport-computer/tee-interop.git
+      COMMIT_SHA=${PIXEL_ATTEST_COMMIT}
+      WORK_DIR=/var/lib/git-launcher/tee-interop
+      RUN_CMD=pip install flask cryptography gunicorn && cd demos/pixel-attest && gunicorn -b 0.0.0.0:5360 -w 2 --timeout 30 app:app
+
+volumes:
+  checkout:

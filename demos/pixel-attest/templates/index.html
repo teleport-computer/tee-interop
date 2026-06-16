@@ -1,0 +1,328 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Pixel 6a · Android Key Attestation</title>
+<style>
+:root{
+  --bg:#f5f6f8;--panel:#ffffff;--panel2:#f0f2f5;--line:#e0e4eb;
+  --ink:#1a1d23;--dim:#6b7280;--acc:#1a73e8;--ok:#188038;--warn:#e37400;
+  --err:#c5221f;--mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+     font:14px/1.6 -apple-system,Segoe UI,Roboto,sans-serif;padding:0 0 60px}
+.wrap{max-width:1080px;margin:0 auto;padding:0 20px}
+header{padding:32px 0 16px;border-bottom:1px solid var(--line);margin-bottom:24px}
+h1{margin:0;font-size:22px;font-weight:700;letter-spacing:-.3px}
+h1 span{color:var(--acc)}
+.sub{color:var(--dim);margin-top:5px;font-size:13px}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:3px 10px;
+       border-radius:20px;font-size:12px;font-weight:600;border:1px solid var(--line)}
+.badge.live{background:#e6f4ea;color:var(--ok);border-color:#a8d5b5}
+.badge.mock{background:#fef7e0;color:var(--warn);border-color:#f4c37d}
+.dot{width:7px;height:7px;border-radius:50%;background:currentColor}
+
+/* trust chain */
+.chain{display:flex;align-items:stretch;gap:0;margin:20px 0 8px;flex-wrap:wrap}
+.node{flex:1;min-width:140px;background:var(--panel);border:1px solid var(--line);
+      border-radius:10px;padding:12px 14px}
+.node .lbl{font-size:11px;color:var(--dim);text-transform:uppercase;letter-spacing:.6px}
+.node .val{font-weight:700;margin-top:3px;font-size:13px}
+.node .mono{font-family:var(--mono);font-size:11px;color:var(--acc);margin-top:4px;word-break:break-all}
+.arrow{display:flex;align-items:center;justify-content:center;color:var(--dim);
+       font-size:18px;padding:0 4px}
+
+.grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:20px}
+@media(max-width:760px){.grid{grid-template-columns:1fr}}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px 20px}
+.panel h2{margin:0 0 4px;font-size:15px;font-weight:700}
+.panel .hint{color:var(--dim);font-size:12px;margin-bottom:14px}
+.kv{display:flex;justify-content:space-between;gap:12px;padding:7px 0;
+    border-bottom:1px solid var(--line)}
+.kv:last-child{border-bottom:0}
+.kv .k{color:var(--dim);white-space:nowrap;font-size:13px}
+.kv .v{text-align:right;font-family:var(--mono);font-size:11px;word-break:break-all}
+.pill{display:inline-block;padding:2px 9px;border-radius:5px;font-size:11px;font-weight:700}
+.pill.ok{background:#e6f4ea;color:var(--ok)}
+.pill.err{background:#fce8e6;color:var(--err)}
+
+/* attest */
+.attest-row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:10px}
+input#nonce{flex:1;min-width:260px;background:var(--panel2);border:1px solid var(--line);
+      color:var(--ink);font-family:var(--mono);font-size:12px;
+      padding:9px 11px;border-radius:8px;outline:none}
+input#nonce:focus{border-color:var(--acc)}
+button{background:var(--acc);color:#fff;border:0;font-weight:700;
+       padding:9px 18px;border-radius:8px;cursor:pointer;font-size:13px}
+button:disabled{opacity:.5;cursor:wait}
+button.ghost{background:transparent;color:var(--dim);border:1px solid var(--line)}
+
+.checks{display:flex;flex-direction:column;gap:8px;margin-top:12px}
+.check{display:flex;gap:11px;background:var(--panel2);border:1px solid var(--line);
+       border-radius:9px;padding:11px 13px;opacity:0;transform:translateY(5px);
+       transition:.3s ease}
+.check.show{opacity:1;transform:none}
+.check .mark{font-size:18px;line-height:1.2;flex-shrink:0}
+.check .ttl{font-weight:700;font-size:13px}
+.check .dsc{color:var(--dim);font-size:12px;margin-top:2px}
+
+.result-row{display:flex;gap:12px;align-items:center;margin-top:14px;
+            padding:12px 14px;border-radius:9px;font-weight:700;font-size:13px}
+.result-row.ok{background:#e6f4ea;color:var(--ok);border:1px solid #a8d5b5}
+.result-row.err{background:#fce8e6;color:var(--err);border:1px solid #f5a9a9}
+
+.fields-grid{display:grid;grid-template-columns:1fr 1fr;gap:0;margin-top:8px;font-size:12px}
+@media(max-width:600px){.fields-grid{grid-template-columns:1fr}}
+.fkv{padding:6px 0;border-bottom:1px solid var(--line)}
+.fkv:last-child,.fkv:nth-last-child(2):nth-child(odd){border-bottom:0}
+.fkv .k{color:var(--dim);font-size:11px}
+.fkv .v{font-family:var(--mono);font-size:11px;word-break:break-all;margin-top:1px}
+
+.sec{font-size:11px;text-transform:uppercase;letter-spacing:1px;color:var(--dim);
+     margin:28px 0 6px;font-weight:700}
+
+/* how it works */
+.steps{counter-reset:s;display:flex;flex-direction:column;gap:10px;margin-top:8px}
+.step{display:flex;gap:12px;align-items:flex-start}
+.step::before{counter-increment:s;content:counter(s);min-width:24px;height:24px;
+              border-radius:50%;background:var(--acc);color:#fff;font-weight:700;
+              font-size:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0}
+.step .st{font-weight:600;font-size:13px}
+.step .sd{color:var(--dim);font-size:12px;margin-top:2px}
+
+code{font-family:var(--mono);font-size:11px;background:var(--panel2);
+     border:1px solid var(--line);border-radius:4px;padding:1px 5px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Pixel 6a · <span>Android Key Attestation</span></h1>
+  <div class="sub">
+    StrongBox (Titan M2) · GrapheneOS {{ "2026052400" }} · APK code-hash bound in challenge
+    &nbsp;
+    <span id="badge" class="badge {% if mock %}mock{% else %}live{% endif %}">
+      <span class="dot"></span>
+      <span>{% if mock %}synthetic{% else %}live device{% endif %}</span>
+    </span>
+  </div>
+</header>
+
+<!-- trust chain strip -->
+<div class="sec">Trust chain</div>
+<div class="chain">
+  <div class="node">
+    <div class="lbl">Google Attestation CA</div>
+    <div class="val">Root of trust</div>
+    <div class="mono">2.5.4.5=f92009e853b6b045</div>
+  </div>
+  <div class="arrow">→</div>
+  <div class="node">
+    <div class="lbl">Titan M2 / StrongBox</div>
+    <div class="val">Key generation + signing</div>
+    <div class="mono">attestationSecurityLevel = StrongBox</div>
+  </div>
+  <div class="arrow">→</div>
+  <div class="node">
+    <div class="lbl">hardwareEnforced</div>
+    <div class="val">deviceLocked · verifiedBootHash</div>
+    <div class="mono" id="hdr-vbhash" title="{{ pinned_vbhash }}">{{ pinned_vbhash[:24] }}…</div>
+  </div>
+  <div class="arrow">→</div>
+  <div class="node">
+    <div class="lbl">attestationChallenge</div>
+    <div class="val">APK hash bound</div>
+    <div class="mono">SHA-256(nonce ‖ apk_hash)</div>
+  </div>
+</div>
+
+<div class="grid">
+
+<!-- device info -->
+<div class="panel">
+  <h2>Device</h2>
+  <div class="hint" id="status-hint">checking connection…</div>
+  <div class="kv"><span class="k">Model</span><span class="v" id="d-model">—</span></div>
+  <div class="kv"><span class="k">Android</span><span class="v" id="d-android">—</span></div>
+  <div class="kv"><span class="k">Socket</span><span class="v" id="d-socket">—</span></div>
+  <div class="kv">
+    <span class="k">Pinned OS hash</span>
+    <span class="v" style="font-size:10px" title="{{ pinned_vbhash }}">{{ pinned_vbhash[:32] }}…</span>
+  </div>
+  <div class="kv"><span class="k">Expected package</span><span class="v">{{ pinned_package }}</span></div>
+</div>
+
+<!-- attestation -->
+<div class="panel">
+  <h2>Attest</h2>
+  <div class="hint">Send a fresh nonce → phone generates StrongBox key with APK hash bound in challenge → verify full chain.</div>
+  <div class="attest-row">
+    <input id="nonce" type="text" placeholder="nonce (leave blank for random)">
+    <button id="btn-attest" onclick="doAttest()">Attest</button>
+    <button class="ghost" onclick="newNonce()">↺</button>
+  </div>
+  <div id="checks" class="checks"></div>
+  <div id="result-row" style="display:none"></div>
+</div>
+
+</div>
+
+<!-- attestation fields -->
+<div class="sec">Attested fields</div>
+<div class="panel">
+  <div class="hint" id="fields-hint">run attestation to see hardware-enforced fields</div>
+  <div id="fields-grid" class="fields-grid" style="display:none"></div>
+</div>
+
+<!-- how it works -->
+<div class="sec">How it works</div>
+<div class="panel">
+  <div class="steps">
+    <div class="step">
+      <div>
+        <div class="st">Verifier sends a nonce</div>
+        <div class="sd">A random challenge prevents replay. The phone receives it via <code>POST /attest</code> over an ADB-forwarded Unix socket.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div>
+        <div class="st">Phone computes its own APK SHA-256</div>
+        <div class="sd">The AttestService reads its own APK file from <code>getApplicationInfo().sourceDir</code> and hashes it. No signing key involved.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div>
+        <div class="st">Derives a bound challenge</div>
+        <div class="sd"><code>cert_challenge = SHA-256(nonce_utf8 ‖ apk_hash_bytes)</code>. This links the fresh nonce to the specific APK hash claim inside the hardware-signed certificate.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div>
+        <div class="st">Titan M2 generates and signs an attestation cert</div>
+        <div class="sd">Android KeyStore asks the StrongBox to create an ephemeral P-256 key. The StrongBox issues a cert including <code>attestationChallenge</code>, <code>verifiedBootHash</code>, <code>deviceLocked</code>, and the caller's package identity. The key is immediately deleted.</div>
+      </div>
+    </div>
+    <div class="step">
+      <div>
+        <div class="st">Verifier checks five properties</div>
+        <div class="sd">
+          (1) cert chain roots at Google's attestation CA ·
+          (2) <code>attestationSecurityLevel = StrongBox</code> ·
+          (3) <code>deviceLocked = true</code> + <code>verifiedBootState ∈ {Verified, SelfSigned}</code> ·
+          (4) <code>verifiedBootHash</code> matches the pinned GrapheneOS build ·
+          (5) <code>attestationChallenge = SHA-256(nonce ‖ claimed_apk_hash)</code>.
+          All five pass → the prover is a specific locked Pixel 6a running the specific APK it claims.
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="sec">Security properties</div>
+<div class="panel">
+  <div class="kv">
+    <span class="k">Hardware root</span>
+    <span class="v">Google attestation CA → Titan M2 (StrongBox), separate secure element</span>
+  </div>
+  <div class="kv">
+    <span class="k">Code identity granularity</span>
+    <span class="v">APK SHA-256 self-reported by running code; OS-granularity (verifiedBootHash) independently hardware-measured. On a locked AVB device, dm-verity protects system partitions so the self-report is trustworthy if APK is in the system image.</span>
+  </div>
+  <div class="kv">
+    <span class="k">Signing key in trust path?</span>
+    <span class="v">No. Verifier pins verifiedBootHash (OS) + APK hash (via challenge). Signing key appears only in softwareEnforced and is not checked.</span>
+  </div>
+  <div class="kv">
+    <span class="k">Freshness</span>
+    <span class="v">Verifier-supplied nonce bound into cert challenge; key deleted after each request</span>
+  </div>
+  <div class="kv">
+    <span class="k">Physical attack resistance</span>
+    <span class="v">Titan M2 is a discrete secure element (PSA / FIPS boundary). verifiedBootHash provided to Titan M2 by bootloader before Android starts — OS cannot tamper with it.</span>
+  </div>
+</div>
+
+</div><!-- /wrap -->
+
+<script>
+async function fetchStatus() {
+  try {
+    const r = await fetch("/api/status");
+    const d = await r.json();
+    if (d.error) { document.getElementById("status-hint").textContent = "⚠ " + d.error + " — " + (d.hint||""); return; }
+    document.getElementById("d-model").textContent   = d.device || "—";
+    document.getElementById("d-android").textContent = "Android " + (d.android || "—");
+    document.getElementById("d-socket").textContent  = d.socket || "—";
+    document.getElementById("status-hint").textContent = d.mock ? "synthetic mode (PIXEL_MOCK=1)" : "connected";
+  } catch(e) { document.getElementById("status-hint").textContent = "⚠ cannot reach service"; }
+}
+
+function newNonce() {
+  const arr = new Uint8Array(12);
+  crypto.getRandomValues(arr);
+  document.getElementById("nonce").value = Array.from(arr).map(b=>b.toString(16).padStart(2,'0')).join('');
+}
+
+async function doAttest() {
+  const btn = document.getElementById("btn-attest");
+  btn.disabled = true;
+  const nonce = document.getElementById("nonce").value.trim() || undefined;
+  document.getElementById("checks").innerHTML = "";
+  document.getElementById("result-row").style.display = "none";
+
+  try {
+    const r = await fetch("/api/attest", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({nonce})
+    });
+    const d = await r.json();
+    if (d.error) { alert(d.error); return; }
+
+    const checks = document.getElementById("checks");
+    d.checks.forEach((c, i) => {
+      const el = document.createElement("div");
+      el.className = "check";
+      el.innerHTML = `<div class="mark">${c.ok ? "✅" : "❌"}</div>
+        <div><div class="ttl">${c.label}</div><div class="dsc">${c.detail}</div></div>`;
+      checks.appendChild(el);
+      setTimeout(() => el.classList.add("show"), i * 80);
+    });
+
+    const rr = document.getElementById("result-row");
+    rr.style.display = "flex";
+    rr.className = "result-row " + (d.all_ok ? "ok" : "err");
+    rr.innerHTML = (d.all_ok
+      ? "✓ All checks passed — " + d.elapsed_ms + " ms"
+      : "✗ Verification failed") +
+      (d.apk_hash ? `<span style="margin-left:auto;font-family:var(--mono);font-size:11px;opacity:.7">apk=${d.apk_hash.slice(0,16)}…</span>` : "");
+
+    if (d.fields) showFields(d.fields, d.apk_hash);
+  } finally { btn.disabled = false; }
+}
+
+function showFields(f, apkHash) {
+  const g = document.getElementById("fields-grid");
+  document.getElementById("fields-hint").style.display = "none";
+  g.style.display = "grid";
+  const rows = [
+    ["verifiedBootHash", f.verifiedBootHash ? f.verifiedBootHash.slice(0,32)+"…" : "—"],
+    ["verifiedBootState", f.verifiedBootState || "—"],
+    ["deviceLocked", String(f.deviceLocked)],
+    ["osVersion", f.osVersion != null ? String(f.osVersion) : "—"],
+    ["osPatchLevel", f.osPatchLevel != null ? String(f.osPatchLevel) : "—"],
+    ["attestationVersion", f.attestationVersion != null ? String(f.attestationVersion) : "—"],
+    ["package", f.package || "—"],
+    ["apk_hash (self-reported)", apkHash ? apkHash.slice(0,32)+"…" : "—"],
+  ];
+  g.innerHTML = rows.map(([k,v]) =>
+    `<div class="fkv"><div class="k">${k}</div><div class="v">${v}</div></div>`
+  ).join("");
+}
+
+fetchStatus();
+newNonce();
+</script>
+</body>
+</html>
