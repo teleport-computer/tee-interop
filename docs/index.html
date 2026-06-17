@@ -160,7 +160,7 @@ they become peers.</p>
 </div>
 
 <div class="legend">
-  <span><span class="dot" style="background:var(--accent)"></span>live demo — click a green node</span>
+  <span><span class="dot" style="background:var(--accent)"></span>verify in your browser — click a green node</span>
   <span><span class="dot" style="background:var(--link)"></span>on-chain adapter</span>
   <span><span class="dot" style="background:#cdd2d8"></span>reference verifier</span>
 </div>
@@ -177,17 +177,21 @@ thing they have in common. A GitHub&nbsp;Actions job proving which workflow buil
 microcontroller proving its firmware hash end up as equal citizens of the same registry.</p>
 </div>
 
-<h2>Live — verify real hardware in your browser</h2>
+<h2>Check it yourself</h2>
+<p style="margin:-2px 2px 14px;color:var(--dim);font-size:14px">The attestations below were captured from the
+actual silicon. Checking one is a read-only contract call — a Solidity <code>view</code> function — so the
+verification runs in your browser against the public chain, observable and reproducible by anyone, with no
+server of ours in the loop.</p>
 <div class="cards">
   <div class="card">
-    <h3>Silicon Labs SiMG301 <span class="pill live">live</span></h3>
+    <h3>Silicon Labs SiMG301 <span class="pill live">view call</span></h3>
     <div class="meta">PSA EAT · COSE_Sign1 / P-256 · factory-rooted</div>
     <p>A $40 Secure Vault microcontroller signs the SHA-256 of its own firmware. Verified on-chain with Base's
     native secp256r1 precompile.</p>
     <a class="go" href="./silabs/">verify a real SiMG301 on-chain →</a>
   </div>
   <div class="card">
-    <h3>Pixel 6a + Titan M2 <span class="pill live">live</span></h3>
+    <h3>Pixel 6a + Titan M2 <span class="pill live">view call</span></h3>
     <div class="meta">Android Key Attestation · 5-cert chain to a Google root</div>
     <p>A re-flashed phone whose <code>verifiedBootHash</code> measures a system-baked APK — MRENCLAVE-style
     "measure the image," on a phone.</p>
@@ -197,7 +201,7 @@ microcontroller proving its firmware hash end up as equal citizens of the same r
 
 <h2>Also in the registry</h2>
 <div class="rows">
-  <div class="r"><span class="name">dstack <span class="pill dep">registered</span></span><span class="desc">Intel TDX confidential VM (Phala) · KMS sig chain, secp256k1 — a live registry member alongside the SiMG301</span></div>
+  <div class="r"><span class="name">dstack <span class="pill dep">registered</span></span><span class="desc">Intel TDX confidential VM (Phala) · KMS sig chain, secp256k1 — registered on-chain alongside the SiMG301</span></div>
   <a class="r" href="https://github.com/amiller/github-zktls" target="_blank" rel="noopener"><span class="name">GitHub / Sigstore <span class="pill dep">paper + faucet</span></span><span class="desc">A GitHub Actions runner as a permissionless TEE — Sigstore binds outputs to a commit SHA, a ZK proof verifies the cert chain on-chain (~3M gas). Full paper and a live Base Sepolia faucet →</span></a>
   <div class="r"><span class="name">AWS Nitro <span class="pill ref">reference</span></span><span class="desc">COSE_Sign1 / P-384 / x509 enclave attestation</span></div>
   <div class="r"><span class="name">Intel TDX / SGX <span class="pill ref">reference</span></span><span class="desc">DCAP quote (P-256)</span></div>
