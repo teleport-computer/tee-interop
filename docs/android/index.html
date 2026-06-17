@@ -90,25 +90,28 @@ change the APK without changing the system hashtree, the vbmeta, and therefore t
 <h2>What the chip actually signed</h2>
 <div class="panel">
 <div class="row"><div class="k">device</div><div class="v">Pixel 6a (bluejay) · GrapheneOS 2026052400 · serial 27081JEGR17677</div></div>
-<div class="row"><div class="k">verifiedBootState</div><div class="v"><span class="pill warn">yellow</span> <span class="dim">SelfSigned — our custom AVB key, not Google's</span></div></div>
-<div class="row"><div class="k">deviceLocked</div><div class="v"><span class="pill">true</span></div></div>
-<div class="row"><div class="k">verifiedBootHash</div><div class="v"><code>0xa6f60a727d5df935040c54cdd57cd0f57d5cec6eac277586d96b3a8701295a74</code> <span class="dim">(= our vbmeta digest)</span></div></div>
+<div class="row"><div class="k">deviceLocked</div><div class="v"><span class="pill">true</span> <span class="dim">— required: only a locked device enforces the measurement</span></div></div>
+<div class="row"><div class="k">verifiedBootHash</div><div class="v"><code>0xa6f60a727d5df935040c54cdd57cd0f57d5cec6eac277586d96b3a8701295a74</code> <span class="dim">(= our vbmeta digest, on the allow-list)</span></div></div>
 <div class="row"><div class="k">osPatchLevel</div><div class="v mono">202605</div></div>
 <div class="row"><div class="k">challenge</div><div class="v"><code>test123</code> <span class="dim">(<code>0x74657374313233</code>, returned as userData)</span></div></div>
-<div class="note"><b>Why yellow is correct here.</b> Yellow = <i>verified boot with a self-signed key</i>. We
-<b>want</b> yellow: green would mean Google's factory key signed the image, but we replaced it with our own AVB
-key so the system hashtree could cover our APK. The trust does not come from Google's signature on the image —
-it comes from <b>pinning the exact vbmeta digest</b> (which embeds our AVB public key) in the contract's
-allow-list. A different image → a different digest → not on the list.</div>
+<div class="row"><div class="k dim">verifiedBootState</div><div class="v dim">SelfSigned — <b>not a trust input.</b> Ignored, along with the signing key (see below)</div></div>
+<div class="note"><b>The code-signing key is removed from the trust model.</b> Standard Key Attestation binds the
+app's <i>signer</i> (MRSIGNER); here the signer is gone. We re-signed <code>vbmeta</code> with our own AVB key
+only as the mechanism to make the system hashtree cover our APK — but the contract never reads who signed, and
+the green/yellow boot-state <i>color</i> is just a label for that. What it checks is <code>deviceLocked</code>
+and that the <code>verifiedBootHash</code> — the measurement of the exact image — is on the allow-list. That is
+<b>MRENCLAVE: measure the code, trust no signer.</b> Change one byte of the APK → different system hashtree →
+different vbmeta → different digest → off the list.</div>
 </div>
 
 <h2>Verify it yourself — right now, in your browser</h2>
 <div class="panel">
 <p>The button below sends the phone's real attestation proof to the verifier contract on Base Sepolia as a
-read-only call. The contract walks the cert chain to a pinned <b>Google</b> root, accepts the
-<b>yellow</b> boot state <i>only because</i> the vbmeta digest is on the owner's allow-list
-(<code>allowedBootHashes</code> — an MRENCLAVE-style set of accepted image digests), and returns that digest as
-the code identity. No wallet, no gas — just a public RPC call from this page.</p>
+read-only call. The contract walks the cert chain to a pinned <b>Google</b> root, requires
+<code>deviceLocked</code>, and checks that the <code>verifiedBootHash</code> is on the owner's allow-list
+(<code>allowedBootHashes</code> — an MRENCLAVE-style set of accepted image digests), returning that digest as
+the code identity. It never consults who signed the image. No wallet, no gas — just a public RPC call from this
+page.</p>
 <button id="verifyBtn">▶ verify Pixel attestation on-chain</button>
 <div class="out dim" id="verifyOut">idle</div>
 <p style="margin:11px 0 0"><small>Contract: <a id="verifierLink" target="_blank" rel="noopener" class="mono"></a></small></p>
@@ -134,8 +137,8 @@ the list — an MRENCLAVE-style versioned rollout, not an automatic one.</small>
 
 <hr>
 <p><small>The system-partition baking, AVB re-signing, and verifier live alongside the captured attestation
-token and 5-cert chain — all from real silicon. Boot state <b>yellow</b> is expected and is what the
-self-signed AVB key produces.</small></p>
+token and 5-cert chain — all from real silicon. The AVB key is a mechanism, not a trust anchor: the contract
+pins the measurement, not the signer.</small></p>
 
 <script type="module">
 import { JsonRpcProvider, Contract } from "https://esm.sh/ethers@6.13.0";
