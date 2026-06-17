@@ -35,6 +35,9 @@ button:hover{background:#096b36}button:disabled{opacity:.5;cursor:default}
 small{color:var(--dim)}
 hr{border:none;border-top:1px solid var(--border);margin:28px 0}
 .note{background:var(--warn-bg);border:1px solid #f0e0b0;border-radius:8px;padding:11px 13px;font-size:13px;color:#6e5200;margin:10px 0 0}
+.hero{margin:8px 0 24px;border-radius:14px;overflow:hidden;border:1px solid var(--border);background:linear-gradient(135deg,#f3f6fb,#eef2f7);box-shadow:0 10px 34px rgba(20,30,55,.10)}
+.hero img{display:block;max-height:460px;width:auto;max-width:100%;margin:0 auto;padding:16px 0}
+.hero .cap{padding:10px 15px;font-size:12.5px;color:var(--dim);border-top:1px solid var(--border);background:#fff}
 </style>
 </head>
 <body>
@@ -42,19 +45,25 @@ hr{border:none;border-top:1px solid var(--border);margin:28px 0}
 <h1>A Pixel 6a that proves which code it runs — on-chain</h1>
 <p class="sub">Live attestation from a real <b>Titan M2</b>, verified in your browser against a contract on Base Sepolia.</p>
 
+<div class="hero">
+<img src="./img/pixel6a.jpg" alt="Google Pixel 6a, rear view showing the camera bar">
+<div class="cap">The hardware: a <b>Pixel 6a</b> (bluejay) with an on-board <b>Titan M2</b> secure element.
+Our unit — serial <code>27081JEGR17677</code>, running GrapheneOS — signed the attestation below.
+<span class="dim">Photo: Nisiguti, <a href="https://commons.wikimedia.org/wiki/File:Google_Pixel_6a_back.jpg" target="_blank" rel="noopener">Wikimedia Commons</a>, CC BY-SA 4.0.</span></div>
+</div>
+
 <div class="panel">
-<p><span class="pill warn">corrected</span> An earlier version of this demo claimed standard Android
-<b>Key Attestation</b> proves which code a phone runs. <b>That was wrong.</b> Key Attestation binds only the
-app's <i>signer</i> (the <code>attestationApplicationId</code> / signing-cert digest), not its code. Anyone
-holding the same signing key can ship completely different code under the same identity — an "evil twin."
-So the original claim was retracted.</p>
-<p style="margin-bottom:0"><b>The fix:</b> we baked our APK <code>com.edgetee.attest</code> into the GrapheneOS
+<p>This is a <b>Pixel 6a</b> (bluejay) running GrapheneOS, with a Google <b>Titan M2</b> secure element on
+board. At boot the Titan M2 measures the system image and signs that measurement under a hardware key that
+chains to a root <b>Google publishes</b> — so anyone can check it, no vendor portal.</p>
+<p style="margin-bottom:0">We baked our APK <code>com.edgetee.attest</code> into the read-only
 <b>system partition</b> (<code>/system/priv-app/</code>), re-signed the AVB <code>vbmeta</code> with our own
-RSA-4096 key, and re-locked the bootloader. Now <b>Titan M2 measures the vbmeta digest before Android
-starts</b>, and via dm-verity that digest transitively covers the whole system partition — including our APK.
-The <code>verifiedBootHash</code> in the attestation cert <b>is</b> a measurement of our exact code. Change the
-APK → different system hashtree → different vbmeta → different <code>verifiedBootHash</code> → the contract
-rejects it. This is the MRENCLAVE-style "measure the image" trust model, on a phone.</p>
+RSA-4096 key, and re-locked the bootloader. The Titan M2 measures that <code>vbmeta</code> digest before
+Android starts, and via dm-verity it transitively covers the whole system partition — including our APK. So
+the <code>verifiedBootHash</code> the chip signs <b>is</b> a measurement of the exact code: change one byte of
+the APK → different system hashtree → different vbmeta → different digest → off the allow-list. This is the
+MRENCLAVE-style "measure the image" trust model, on a phone. Standard Key Attestation only binds the app's
+<i>signer</i>; here the code identity is the image digest itself.</p>
 </div>
 
 <h2>The cert chain (Google-rooted, verified offline)</h2>
