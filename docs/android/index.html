@@ -2,60 +2,183 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Retracted · Pixel Key Attestation is not a code-attesting TEE</title>
+<title>Pixel 6a · on-chain code attestation</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-:root { --bg:#0c0d10; --panel:#15171c; --border:#2a2d36; --text:#e6e6e8; --dim:#8b8d96; --bad:#eb5757; --link:#4ea4ff; }
-* { box-sizing:border-box; }
-body { margin:0; padding:24px; background:var(--bg); color:var(--text); font:14px/1.6 ui-monospace,"SF Mono",Menlo,monospace; max-width:820px; margin-inline:auto; }
-h1 { font-size:18px; margin:0 0 16px; font-weight:600; }
-.pill { display:inline-block; padding:2px 8px; border-radius:999px; background:#3a1818; color:var(--bad); font-size:11px; font-weight:600; margin-left:8px; }
-.panel { background:var(--panel); border:1px solid var(--border); border-radius:6px; padding:16px; margin-bottom:16px; }
-a { color:var(--link); text-decoration:none; } a:hover { text-decoration:underline; }
-code { color:var(--dim); }
-b { color:var(--text); }
-.dim { color:var(--dim); }
+:root{--bg:#ffffff;--panel:#f7f8fa;--border:#e3e6ea;--text:#1b1f24;--dim:#5b626b;--accent:#0a7d3f;--accent-bg:#e8f5ec;--warn:#9a6700;--warn-bg:#fff5e0;--bad:#b42318;--link:#0a59c2}
+*{box-sizing:border-box}
+body{margin:0;padding:32px 20px;background:var(--bg);color:var(--text);
+  font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  max-width:760px;margin-inline:auto}
+h1{font-size:23px;line-height:1.3;margin:0 0 6px;font-weight:680;letter-spacing:-.01em}
+h2{font-size:12px;margin:32px 0 10px;color:var(--dim);text-transform:uppercase;letter-spacing:.07em;font-weight:680}
+.sub{color:var(--dim);margin:0 0 24px;font-size:16px}
+p{margin:0 0 12px}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:14px}
+.row{display:flex;gap:12px;align-items:baseline;padding:4px 0;border-bottom:1px solid var(--border)}
+.row:last-child{border-bottom:none}
+.row .k{color:var(--dim);min-width:150px;flex-shrink:0;font-size:13px}
+.row .v{color:var(--text);word-break:break-all}
+a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
+code,.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:.92em}
+code{color:#0b5b2e;background:var(--accent-bg);padding:1px 5px;border-radius:4px}
+.pill{display:inline-block;padding:2px 9px;border-radius:999px;background:var(--accent-bg);color:var(--accent);font-size:11px;font-weight:700;letter-spacing:.02em}
+.pill.warn{background:var(--warn-bg);color:var(--warn)}
+.dim{color:var(--dim)}
+button{font:inherit;font-weight:600;background:var(--accent);color:#fff;border:none;border-radius:7px;padding:11px 18px;cursor:pointer}
+button:hover{background:#096b36}button:disabled{opacity:.5;cursor:default}
+.chain{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin:4px 0}
+.chain .node{background:#fff;border:1px solid var(--border);border-radius:7px;padding:8px 11px;font-size:12.5px}
+.chain .arr{color:var(--dim)}
+.out{font-family:ui-monospace,Menlo,monospace;white-space:pre-wrap;background:#fff;border:1px solid var(--border);border-radius:8px;padding:13px;margin-top:12px;font-size:12.5px;min-height:20px;line-height:1.55}
+.ok{color:var(--accent);font-weight:600}.warnc{color:var(--warn)}.badc{color:var(--bad)}
+small{color:var(--dim)}
+hr{border:none;border-top:1px solid var(--border);margin:28px 0}
+.note{background:var(--warn-bg);border:1px solid #f0e0b0;border-radius:8px;padding:11px 13px;font-size:13px;color:#6e5200;margin:10px 0 0}
 </style>
 </head>
 <body>
 
-<h1>Pixel Key Attestation is not a code-attesting TEE<span class="pill">RETRACTED</span></h1>
+<h1>A Pixel 6a that proves which code it runs — on-chain</h1>
+<p class="sub">Live attestation from a real <b>Titan M2</b>, verified in your browser against a contract on Base Sepolia.</p>
 
 <div class="panel">
-This page used to claim <i>"Pixel as a publicly verifiable, permissionless TEE"</i>
-and demonstrated a Pixel ↔ GitHub-Actions secret exchange "both sides independently
-verifiable." The interactive demo has been taken down because that framing was wrong.
-The full write-up is in <a href="./README.md">README.md</a>.
+<p><span class="pill warn">corrected</span> An earlier version of this demo claimed standard Android
+<b>Key Attestation</b> proves which code a phone runs. <b>That was wrong.</b> Key Attestation binds only the
+app's <i>signer</i> (the <code>attestationApplicationId</code> / signing-cert digest), not its code. Anyone
+holding the same signing key can ship completely different code under the same identity — an "evil twin."
+So the original claim was retracted.</p>
+<p style="margin-bottom:0"><b>The fix:</b> we baked our APK <code>com.edgetee.attest</code> into the GrapheneOS
+<b>system partition</b> (<code>/system/priv-app/</code>), re-signed the AVB <code>vbmeta</code> with our own
+RSA-4096 key, and re-locked the bootloader. Now <b>Titan M2 measures the vbmeta digest before Android
+starts</b>, and via dm-verity that digest transitively covers the whole system partition — including our APK.
+The <code>verifiedBootHash</code> in the attestation cert <b>is</b> a measurement of our exact code. Change the
+APK → different system hashtree → different vbmeta → different <code>verifiedBootHash</code> → the contract
+rejects it. This is the MRENCLAVE-style "measure the image" trust model, on a phone.</p>
 </div>
 
+<h2>The cert chain (Google-rooted, verified offline)</h2>
 <div class="panel">
-<b>The short version.</b> Android Key Attestation never measures the app's code — it
-binds the app's <i>signer</i> (<code>attestationApplicationId</code> = package + signing-cert
-digest), not what the code does.
-<ul style="margin:10px 0 0 18px; padding:0;">
-  <li>Permissionless sideloading ⇒ no canonical signer; anyone signs their own APK and
-      gets a valid Google-rooted chain. The signer constrains nothing.</li>
-  <li>An evil twin (same package, same signer) that exfiltrates the challenge produces a
-      <b>byte-identical</b> attestation that passes the fullest pin set.</li>
-  <li>Non-extractability protects the <b>key bytes</b>, not the <b>data</b>: keystore access
-      is gated by app identity, not code, so any code under that identity can use the key
-      to decrypt and exfiltrate. "Only this device can decrypt" carries no confidentiality.</li>
-  <li>Not the SGX/SEV/Nitro trust model — those measure the enclave image; this measures
-      only the OS (verified boot), never the app.</li>
-</ul>
+<div class="chain">
+<span class="node">Android Keystore Key<br><small class="mono">leaf · attestation ext + P-256 key</small></span><span class="arr">←</span>
+<span class="node">Titan M2 batch key<br><small class="mono">CN d738b551…955f7a, O=TEE</small></span><span class="arr">←</span>
+<span class="node">Droid CA3<br><small>O=Google LLC</small></span><span class="arr">←</span>
+<span class="node">Droid CA2<br><small>O=Google LLC</small></span><span class="arr">←</span>
+<span class="node">Key Attestation CA1<br><small>O=Google LLC · root</small></span>
+</div>
+<p style="margin:10px 0 0"><small>Five certs, leaf-first. The leaf carries the hardware attestation extension
+and the per-key P-256 public key; it is signed by the Titan M2 batch attestation key, which chains up to
+<b>Key Attestation CA1</b> — a root Google publishes in <code>roots.json</code> and that the verifier
+contract pins. Verified offline, byte-for-byte, against Google's published roots.</small></p>
 </div>
 
+<h2>The measurement chain (Titan M2 → AVB / dm-verity → our APK)</h2>
 <div class="panel">
-<b>What a Pixel attestation genuinely proves:</b> genuine Titan M2, locked bootloader +
-verified boot, a non-extractable key, and a chain to Google's Hardware Attestation Root.
-That is <b>proof of genuine, unique secure hardware</b> (good for sybil resistance) — ERC-733
-<b>Stage 0 for code integrity</b>, not a TEE that runs attested code.
-<div class="dim" style="margin-top:10px;">
-Demonstration + repro: <code>edge-tee/pixel-attest/NOTES-attestation-does-not-bind-code.md</code>.
-The on-chain verifier (<code>contracts/AndroidKeyAttestationVerifier.sol</code>) remains a
-correct cert-<i>chain</i> verifier; it just does not verify any code.
+<div class="chain">
+<span class="node">Titan M2<br><small>measures at boot</small></span><span class="arr">→</span>
+<span class="node">vbmeta<br><small class="mono">signed by OUR RSA-4096 key</small></span><span class="arr">→</span>
+<span class="node">hashtree descriptor</span><span class="arr">→</span>
+<span class="node">system partition<br><small>Merkle root</small></span><span class="arr">→</span>
+<span class="node">/system/priv-app/<br><small class="mono">com.edgetee.attest/base.apk</small></span>
 </div>
+<p style="margin:10px 0 0"><small>Titan M2 hashes the <code>vbmeta</code> image before Android starts and emits
+that digest as <code>verifiedBootHash</code>. <code>vbmeta</code> embeds the dm-verity hashtree descriptor whose
+root covers every block of the read-only system partition — including our baked-in APK. There is no path to
+change the APK without changing the system hashtree, the vbmeta, and therefore the digest the chip signs.</small></p>
 </div>
 
+<h2>What the chip actually signed</h2>
+<div class="panel">
+<div class="row"><div class="k">device</div><div class="v">Pixel 6a (bluejay) · GrapheneOS 2026052400 · serial 27081JEGR17677</div></div>
+<div class="row"><div class="k">verifiedBootState</div><div class="v"><span class="pill warn">yellow</span> <span class="dim">SelfSigned — our custom AVB key, not Google's</span></div></div>
+<div class="row"><div class="k">deviceLocked</div><div class="v"><span class="pill">true</span></div></div>
+<div class="row"><div class="k">verifiedBootHash</div><div class="v"><code>0xa6f60a727d5df935040c54cdd57cd0f57d5cec6eac277586d96b3a8701295a74</code> <span class="dim">(= our vbmeta digest)</span></div></div>
+<div class="row"><div class="k">osPatchLevel</div><div class="v mono">202605</div></div>
+<div class="row"><div class="k">challenge</div><div class="v"><code>test123</code> <span class="dim">(<code>0x74657374313233</code>, returned as userData)</span></div></div>
+<div class="note"><b>Why yellow is correct here.</b> Yellow = <i>verified boot with a self-signed key</i>. We
+<b>want</b> yellow: green would mean Google's factory key signed the image, but we replaced it with our own AVB
+key so the system hashtree could cover our APK. The trust does not come from Google's signature on the image —
+it comes from <b>pinning the exact vbmeta digest</b> (which embeds our AVB public key) in the contract's
+allow-list. A different image → a different digest → not on the list.</div>
+</div>
+
+<h2>Verify it yourself — right now, in your browser</h2>
+<div class="panel">
+<p>The button below sends the phone's real attestation proof to the verifier contract on Base Sepolia as a
+read-only call. The contract walks the cert chain to a pinned <b>Google</b> root, accepts the
+<b>yellow</b> boot state <i>only because</i> the vbmeta digest is on the owner's allow-list
+(<code>allowedBootHashes</code> — an MRENCLAVE-style set of accepted image digests), and returns that digest as
+the code identity. No wallet, no gas — just a public RPC call from this page.</p>
+<button id="verifyBtn">▶ verify Pixel attestation on-chain</button>
+<div class="out dim" id="verifyOut">idle</div>
+<p style="margin:11px 0 0"><small>Contract: <a id="verifierLink" target="_blank" rel="noopener" class="mono"></a></small></p>
+<p style="margin:6px 0 0"><small>Registry: <a id="bridgeLink" target="_blank" rel="noopener" class="mono"></a></small></p>
+</div>
+
+<h2>What this proves</h2>
+<div class="panel">
+<p><span class="pill">proven</span> The attestation was signed by a genuine <b>Titan M2</b> whose batch key chains
+to a Google-published root; the chain verifies; <code>deviceLocked=true</code>; and the
+<code>verifiedBootHash</code> the chip signed equals the vbmeta digest that — via dm-verity — measures the exact
+system partition holding our APK.</p>
+<p style="margin-top:14px"><span class="pill warn">measure the image</span> Code identity here is the
+<b>image digest</b>, not the signer. Modify the APK and you get a different system hashtree, a different vbmeta,
+and a different <code>verifiedBootHash</code> — which is no longer on the allow-list, so the contract rejects it.
+This is the property standard Key Attestation could not give.</p>
+<p style="margin-bottom:0"><small>Trust model: you trust <b>Google</b> as the silicon root (the cert chain) and
+the owner's <b>allow-list of image digests</b> (<code>allowedBootHashes</code>). You do <b>not</b> trust the
+operator, a cloud, or any server — the check runs in a public contract. Honest caveat: the allow-list pins
+<i>exact</i> image digests, so a legitimate OS or APK update produces a new digest that the owner must add to
+the list — an MRENCLAVE-style versioned rollout, not an automatic one.</small></p>
+</div>
+
+<hr>
+<p><small>The system-partition baking, AVB re-signing, and verifier live alongside the captured attestation
+token and 5-cert chain — all from real silicon. Boot state <b>yellow</b> is expected and is what the
+self-signed AVB key produces.</small></p>
+
+<script type="module">
+import { JsonRpcProvider, Contract } from "https://esm.sh/ethers@6.13.0";
+
+const RPC = "https://sepolia.base.org";
+const VERIFIER = "0x78c8c36EbAC7E2c46aF788558141d050Fb823bE8";
+const BRIDGE = "0x368FbE0d1580dCA073b9b28b40aDca2cd4B13af0";
+const EXPECTED_CODE = "0xa6f60a727d5df935040c54cdd57cd0f57d5cec6eac277586d96b3a8701295a74";
+const EXPECTED_USERDATA = "0x74657374313233"; // ascii "test123"
+const PROOF = "0x000000000000000000000000000000000000000000000000000000000000002000000000000000000000000000000000000000000000000000000000000000600000000000000000000000000000000000000000000000000000000000000e400000000000000000000000000000000000000000000000000000000000000e80000000000000000000000000000000000000000000000000000000000000000500000000000000000000000000000000000000000000000000000000000000a0000000000000000000000000000000000000000000000000000000000000038000000000000000000000000000000000000000000000000000000000000005a000000000000000000000000000000000000000000000000000000000000008c00000000000000000000000000000000000000000000000000000000000000b6000000000000000000000000000000000000000000000000000000000000002b6308202b230820259a003020102020101300a06082a8648ce3d0403023039310c300a060355040a130354454531293027060355040313206437333862353531366332373738613933656433346663623938393535663761301e170d3730303130313030303030305a170d3438303130313030303030305a301f311d301b06035504031314416e64726f6964204b657973746f7265204b65793059301306072a8648ce3d020106082a8648ce3d030107034200047bc039b06576bbf198a62a829cd4def370d07cf5d978a303523f4fa0ba706811a7c34d87a2b138c031f5e3a9f88f640e51ace5fc78adac7138764267aa481245a382016a30820166300e0603551d0f0101ff04040302038830820152060a2b06010401d679020111048201423082013e020201900a0101020201900a010104077465737431323304003079bf853d080206019ed2eb9b31bf8545430441303f311930170412636f6d2e656467657465652e61747465737402010031220420d623fd464d931aa67e9e7af548e17914c189e916a452dce0bf7b26c1a387f224bf8554220420136a0ca952cb3a3f5216c70919361ff878d9fc4c390b07d1361bd91a71a75fed3081a7a10b3109020102020103020106a203020103a30402020100a5053103020104aa03020101bf8377020500bf853e03020100bf85404c304a04208cc41c74f9e9c4597ae04f476047c7de40327001c92f03bc8f7a180e57c5de670101ff0a01010420a6f60a727d5df935040c54cdd57cd0f57d5cec6eac277586d96b3a8701295a74bf8541050203027100bf854205020303176dbf854e06020401352699bf854f06020401352699300a06082a8648ce3d0403020347003044022043916d74ec4b799d7104eb72ac20985f3ab0060011341a695b4a12ec6f5e6bbd022004c9c9e780808363b200ed80e041ae0614eca48859c535a72a4eb91f14702d220000000000000000000000000000000000000000000000000000000000000000000000000000000001e5308201e130820186a003020102021100d738b5516c2778a93ed34fcb98955f7a300a06082a8648ce3d040302302931133011060355040a130a476f6f676c65204c4c43311230100603550403130944726f696420434133301e170d3236303631353030313032395a170d3236303632383036333235345a3039310c300a060355040a1303544545312930270603550403132064373338623535313663323737386139336564333466636239383935356637613059301306072a8648ce3d020106082a8648ce3d0301070342000415c28f9aed224339c05ceab1ae20948422a45454d0598d44f9194d30da797472439e1047580c05f133792e2b5e7f116f59c71375679af79093a7be842041774aa37f307d301d0603551d0e0416041426992f21709a50a7d3145752bf8f40ae24ac8a29301f0603551d23041830168014fb60e4da894b85f070d701c83d793cb07af48ee9300f0603551d130101ff040530030101ff300e0603551d0f0101ff040403020204301a060a2b06010401d67902011e040ca20118400366476f6f676c65300a06082a8648ce3d0403020349003046022100d553553bc92fc88820f2752d94a9c752863ea7cb5e0a1471bb7fe5fd7be33f9f022100a198f6cc291bdfdb248780707bb3a0ab328f38d421c4032c542b0881daeed94700000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002f4308202f030820275a00302010202130a9305e9c3863a966cb581414b5d57e04e2222300a06082a8648ce3d040303302931133011060355040a130a476f6f676c65204c4c43311230100603550403130944726f696420434132301e170d3236303533313139303135395a170d3236303830393139303135385a302931133011060355040a130a476f6f676c65204c4c43311230100603550403130944726f6964204341333059301306072a8648ce3d020106082a8648ce3d03010703420004517c50ee8c1d5f1b1edc312760e64124357a91dc5ba7d501ff77a5df5afe88163f3b1007c0ca313cdb3ca7f0a27dafd8166d9c810729ae048a0bd37e55bf1d92a382017a30820176300e0603551d0f0101ff040403020204300f0603551d130101ff040530030101ff301d0603551d0e04160414fb60e4da894b85f070d701c83d793cb07af48ee9301f0603551d230418301680144520323e1fa6f98f1cd5c3472ed47a50fe3ba8e030818d06082b06010505070101048180307e307c06082b060105050730028670687474703a2f2f7072697661746563612d636f6e74656e742d36396232336161652d303030302d323633622d623832392d3134633134656636353666382e73746f726167652e676f6f676c65617069732e636f6d2f33643836616336333836336166623961383066662f63612e6372743081820603551d1f047b30793077a075a0738671687474703a2f2f7072697661746563612d636f6e74656e742d36396232336161652d303030302d323633622d623832392d3134633134656636353666382e73746f726167652e676f6f676c65617069732e636f6d2f33643836616336333836336166623961383066662f63726c2e63726c300a06082a8648ce3d0403030369003066023100dd64ee0dff6022c83a01c40d8f3e960b62fbb30a6e46547a043e9d136686626bdf2790bf954316e61841e55f5a922cdd023100926e2ca2eba88173a15b95397c9422f65af7e33a879dafb6e6f0fc3f8ada9923d36afdd81b029e80b854179e63ffdffc000000000000000000000000000000000000000000000000000000000000000000000000000000000000026930820265308201eba003020102021100b184cb05ec50fdc985f0ec53297cf823300a06082a8648ce3d0403033052311c301a06035504030c134b6579204174746573746174696f6e204341313110300e060355040b0c07416e64726f696431133011060355040a0c0a476f6f676c65204c4c43310b3009060355040613025553301e170d3236303230393139353731305a170d3239303230383139353731305a302931133011060355040a130a476f6f676c65204c4c43311230100603550403130944726f6964204341323076301006072a8648ce3d020106052b8104002203620004f5f7eb510259b0b9ab95c91ae01eaca493299a124392d48612a17010c8146f50d127639146aa68b8e1d39672a331bb4b886c1de29f94c3dc6b11d4d0668b77fffe62346a20116c1b5d3f761a21f7fccb2d3be8d63d74f32706208c2308d14760a381ad3081aa30470603551d1f0440303e303ca03aa038863668747470733a2f2f616e64726f69642e676f6f676c65617069732e636f6d2f6174746573746174696f6e2f6b65795f6361312e63726c301d0603551d0e041604144520323e1fa6f98f1cd5c3472ed47a50fe3ba8e0300e0603551d0f0101ff040403020106300f0603551d130101ff040530030101ff301f0603551d230418301680145232bb2cfb46439bdcd681a90e6566e03441ea40300a06082a8648ce3d040303036800306502305f397998d7e482713fe858bd7b02e552eeea31317b2c2e4b230a11d3f958533295aef49e36c771b6d211d51938fedd92023100c16198ddefebdfbb22d50999135fbc25be3711263beb116cb1be4644e6f96af1cde5c07f49c8d04fdce793777a3c209b0000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000022630820222308201a8a00302010202110084a9d0297b0eb58ae7ff0e80de760605300a06082a8648ce3d0403033052311c301a06035504030c134b6579204174746573746174696f6e204341313110300e060355040b0c07416e64726f696431133011060355040a0c0a476f6f676c65204c4c43310b3009060355040613025553301e170d3235303731373232333231385a170d3335303731353232333231385a3052311c301a06035504030c134b6579204174746573746174696f6e204341313110300e060355040b0c07416e64726f696431133011060355040a0c0a476f6f676c65204c4c43310b30090603550406130255533076301006072a8648ce3d020106052b810400220362000423da23714edf3e5b050a3c72e8846ace078ea0ad1bf98b15f453d0cb08b2c3c110453909f6edeac1f9c8e031a848b941a829535c97e07c2719beceb416290d3079eee1f911cce6df803914d8a3577b34fdfd143e5ef36c9713c7ac70a8c211aba3423040300f0603551d130101ff040530030101ff300e0603551d0f0101ff040403020106301d0603551d0e041604145232bb2cfb46439bdcd681a90e6566e03441ea40300a06082a8648ce3d0403030368003065023044df8cf3bf1f0a91791d824bba74656a03fcb1ecea10e2e36da8a627c71146982f1c06953f522dd8e4569cf4514391e70231008a06cb118a447553a6aa46445889b5010e393a7ffacd46731798b91db387ff34950caef6f0050a3e84e005dcfa8b26460000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000774657374313233000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000001a6f60a727d5df935040c54cdd57cd0f57d5cec6eac277586d96b3a8701295a748cc41c74f9e9c4597ae04f476047c7de40327001c92f03bc8f7a180e57c5de67d623fd464d931aa67e9e7af548e17914c189e916a452dce0bf7b26c1a387f224000000000000000000000000000000000000000000000000000000000003176d0000000000000000000000000000000000000000000000000000000000000120000000000000000000000000000000000000000000000000000000000000005b3059301306072a8648ce3d020106082a8648ce3d030107034200047bc039b06576bbf198a62a829cd4def370d07cf5d978a303523f4fa0ba706811a7c34d87a2b138c031f5e3a9f88f640e51ace5fc78adac7138764267aa4812450000000000";
+
+const VERIFIER_ABI = ["function verifyAllowlisted(bytes) view returns (bytes32 codeId, bytes pubkey, bytes userData)"];
+
+const $ = (id) => document.getElementById(id);
+const provider = new JsonRpcProvider(RPC);
+const trunc = (s,h=12,t=10)=> !s||s.length<=h+t+3 ? s : s.slice(0,h)+"…"+s.slice(-t);
+const hexToAscii = (h)=>{ h=h.replace(/^0x/,""); let s=""; for(let i=0;i<h.length;i+=2) s+=String.fromCharCode(parseInt(h.substr(i,2),16)); return s; };
+
+$("verifierLink").textContent = VERIFIER;
+$("verifierLink").href = `https://sepolia.basescan.org/address/${VERIFIER}`;
+$("bridgeLink").textContent = BRIDGE;
+$("bridgeLink").href = `https://sepolia.basescan.org/address/${BRIDGE}`;
+
+$("verifyBtn").onclick = async () => {
+  const out = $("verifyOut"); const btn = $("verifyBtn");
+  btn.disabled = true; out.className = "out dim"; out.textContent = "calling AndroidVerifier.verifyAllowlisted(proof) on Base Sepolia…";
+  try {
+    const v = new Contract(VERIFIER, VERIFIER_ABI, provider);
+    const [codeId, pubkey, userData] = await v.verifyAllowlisted(PROOF);
+    const match = codeId.toLowerCase() === EXPECTED_CODE.toLowerCase();
+    const challMatch = userData.toLowerCase() === EXPECTED_USERDATA.toLowerCase();
+    out.className = "out";
+    out.innerHTML =
+      `<span class="ok">✓ cert chain + boot state verified on-chain (root pinned to Google)</span>\n` +
+      `codeId    = ${codeId}\n` +
+      `            ${match ? '<span class="ok">↑ verifiedBootHash = our vbmeta digest (the OS+APK image identity)</span>' : '<span class="badc">↑ unexpected</span>'}\n` +
+      `challenge = ${userData}  ${challMatch ? `<span class="ok">("${hexToAscii(userData)}")</span>` : '<span class="badc">↑ unexpected</span>'}\n` +
+      `device    = ${trunc(pubkey,14,12)}  <span class="dim">(per-key P-256 attested pubkey)</span>\n\n` +
+      `<span class="dim">Titan M2's attestation of the exact code this phone booted just verified in a public contract, from your browser.</span>`;
+  } catch (e) {
+    out.className = "out badc"; out.textContent = "error: " + (e.shortMessage || e.message || e);
+  } finally { btn.disabled = false; }
+};
+</script>
 </body>
 </html>

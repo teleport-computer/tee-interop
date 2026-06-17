@@ -34,6 +34,12 @@ contract AndroidKeyAttestationVerifier is IVerifier {
     /// Minimum osPatchLevel (YYYYMM) the proof must declare. 0 disables.
     uint32 public minOsPatchLevel;
 
+    /// Allow-list of accepted AVB vbmeta digests (verifiedBootHash). Each entry
+    /// is the measurement of one exact OS+app image. Like an MRENCLAVE set: the
+    /// owner adds the next image's digest before a rollout and retires the old
+    /// one afterwards, so multiple legitimate versions can be live at once.
+    mapping(bytes32 => bool) public allowedBootHashes;
+
     address public owner;
 
     struct AndroidProof {
@@ -84,6 +90,8 @@ contract AndroidKeyAttestationVerifier is IVerifier {
     event AppCertRemoved(bytes32 indexed certSha256);
     event AppAllowlistToggled(bool required);
     event MinOsPatchLevelSet(uint32 level);
+    event BootHashAllowed(bytes32 indexed verifiedBootHash);
+    event BootHashRemoved(bytes32 indexed verifiedBootHash);
 
     error NotOwner();
     error EmptyChain();
@@ -94,6 +102,8 @@ contract AndroidKeyAttestationVerifier is IVerifier {
     error AppCertNotAllowed(bytes32 certSha256);
     error OsPatchLevelTooLow(uint32 got, uint32 want);
     error ChallengeMismatch();
+    error VerifiedBootHashMismatch(bytes32 got, bytes32 want);
+    error BootHashNotAllowed(bytes32 verifiedBootHash);
 
     modifier onlyOwner() { if (msg.sender != owner) revert NotOwner(); _; }
 
@@ -137,6 +147,16 @@ contract AndroidKeyAttestationVerifier is IVerifier {
         emit MinOsPatchLevelSet(level);
     }
 
+    function addAllowedBootHash(bytes32 verifiedBootHash) external onlyOwner {
+        allowedBootHashes[verifiedBootHash] = true;
+        emit BootHashAllowed(verifiedBootHash);
+    }
+
+    function removeAllowedBootHash(bytes32 verifiedBootHash) external onlyOwner {
+        allowedBootHashes[verifiedBootHash] = false;
+        emit BootHashRemoved(verifiedBootHash);
+    }
+
     // --- IVerifier ---
 
     function verify(bytes calldata proof)
@@ -145,7 +165,7 @@ contract AndroidKeyAttestationVerifier is IVerifier {
         override
         returns (bytes32 codeId, bytes memory pubkey, bytes memory userData)
     {
-        return _verifyProof(proof);
+        return _verifyProof(proof, bytes32(0));
     }
 
     function verifyAndCache(bytes calldata proof)
@@ -153,10 +173,39 @@ contract AndroidKeyAttestationVerifier is IVerifier {
         override
         returns (bytes32 codeId, bytes memory pubkey, bytes memory userData)
     {
-        return _verifyProof(proof);
+        return _verifyProof(proof, bytes32(0));
     }
 
-    function _verifyProof(bytes calldata proof)
+    /// @notice Pin the exact OS image. `expectedVerifiedBootHash` is the AVB
+    /// vbmeta digest; via dm-verity it covers the whole system partition,
+    /// including an app baked into /system/priv-app. A device flashed with a
+    /// custom AVB key reports SelfSigned (yellow) boot state — so this path
+    /// accepts yellow and derives all trust from the pinned digest, not from
+    /// Google's factory key. The returned codeId is the vbmeta digest itself:
+    /// the identity of the OS+app image actually measured by Titan M2.
+    function verifyWithBootHash(bytes calldata proof, bytes32 expectedVerifiedBootHash)
+        external
+        view
+        returns (bytes32 codeId, bytes memory pubkey, bytes memory userData)
+    {
+        if (expectedVerifiedBootHash == bytes32(0)) revert VerifiedBootHashMismatch(bytes32(0), bytes32(0));
+        return _verifyProof(proof, expectedVerifiedBootHash);
+    }
+
+    /// @notice Self-rooted appliance path against the owner-maintained allow-list.
+    /// The proof's verifiedBootHash must be a currently-allowed image digest.
+    /// Returns codeId = the matched vbmeta digest (the OS+app code identity).
+    function verifyAllowlisted(bytes calldata proof)
+        external
+        view
+        returns (bytes32 codeId, bytes memory pubkey, bytes memory userData)
+    {
+        bytes32 vbh = abi.decode(proof, (AndroidProof)).parsed.verifiedBootHash;
+        if (!allowedBootHashes[vbh]) revert BootHashNotAllowed(vbh);
+        return _verifyProof(proof, vbh);
+    }
+
+    function _verifyProof(bytes calldata proof, bytes32 expectedVerifiedBootHash)
         internal
         view
         returns (bytes32 codeId, bytes memory pubkey, bytes memory userData)
@@ -183,7 +232,18 @@ contract AndroidKeyAttestationVerifier is IVerifier {
         // 4. Extension-derived policy
         ParsedKeyDescription memory kd = p.parsed;
 
-        if (kd.verifiedBootState != 0) revert VerifiedBootStateRejected(kd.verifiedBootState);
+        if (expectedVerifiedBootHash == bytes32(0)) {
+            // OEM-rooted path: require Verified (green) — Google/OEM factory key.
+            if (kd.verifiedBootState != 0) revert VerifiedBootStateRejected(kd.verifiedBootState);
+        } else {
+            // Self-rooted appliance: a custom AVB key yields SelfSigned (yellow,
+            // state 1). The pinned digest is the trust anchor; it embeds the AVB
+            // public key, so matching it transitively pins the signing key too.
+            if (kd.verifiedBootState > 1) revert VerifiedBootStateRejected(kd.verifiedBootState);
+            if (kd.verifiedBootHash != expectedVerifiedBootHash) {
+                revert VerifiedBootHashMismatch(kd.verifiedBootHash, expectedVerifiedBootHash);
+            }
+        }
         if (!kd.deviceLocked) revert DeviceNotLocked();
 
         if (requireAppAllowlist && !allowedAppCertHashes[kd.appCertSha256]) {
@@ -201,7 +261,10 @@ contract AndroidKeyAttestationVerifier is IVerifier {
         // exercise both equal- and mismatching-challenge cases.
         if (!_challengeMatchesLeaf(p)) revert ChallengeMismatch();
 
-        return (kd.appCertSha256, kd.leafPubkey, p.challenge);
+        // Code identity: the OS+app image digest for the pinned path; the app
+        // signing-cert hash for the OEM-rooted path.
+        codeId = expectedVerifiedBootHash == bytes32(0) ? kd.appCertSha256 : kd.verifiedBootHash;
+        return (codeId, kd.leafPubkey, p.challenge);
     }
 
     /// @dev Stubbed. See top-level comment.

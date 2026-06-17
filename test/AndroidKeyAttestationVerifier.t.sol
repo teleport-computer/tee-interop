@@ -17,20 +17,34 @@ contract AndroidKeyAttestationVerifierTest is Test {
 
     // Challenge string that was bound into the captured leaf.
     string constant CAPTURED_CHALLENGE =
-        "edge-tee-pixel6-first-attestation-20260520";
+        "edge-tee-pixel6-agree-key-20260524";
 
     string constant PEM_PATH = "test/fixtures/pixel6_strongbox.pem";
 
+    // Google root the GrapheneOS appliance chain terminates at.
+    bytes32 constant APPLIANCE_ROOT_FP =
+        0x6d9db4ce6c5c0b293166d08986e05774a8776ceb525d9e4329520de12ba4bcc0;
+    // vbmeta digest of the appliance image (GrapheneOS + baked APK).
+    bytes32 constant APPLIANCE_VBH =
+        0xa6f60a727d5df935040c54cdd57cd0f57d5cec6eac277586d96b3a8701295a74;
+    string constant APPLIANCE_CHALLENGE = "test123";
+    string constant APPLIANCE_PEM = "test/fixtures/pixel6a_appliance_yellow.pem";
+
     function setUp() public {
-        bytes32[] memory roots = new bytes32[](1);
+        bytes32[] memory roots = new bytes32[](2);
         roots[0] = PIXEL6_ROOT_FP;
+        roots[1] = APPLIANCE_ROOT_FP;
         verifier = new AndroidKeyAttestationVerifier(roots);
     }
 
     function _buildProof(string memory challenge) internal returns (bytes memory) {
+        return _buildProofFrom(PEM_PATH, challenge);
+    }
+
+    function _buildProofFrom(string memory pem, string memory challenge) internal returns (bytes memory) {
         string[] memory inputs = new string[](3);
         inputs[0] = "tools/android_keyattest/build_proof.py";
-        inputs[1] = PEM_PATH;
+        inputs[1] = pem;
         inputs[2] = challenge;
         // Run via the project venv where eth_abi + cryptography are installed.
         string[] memory cmd = new string[](2);
@@ -96,6 +110,70 @@ contract AndroidKeyAttestationVerifierTest is Test {
         // Adding our app cert hash should make it pass again.
         verifier.addAllowedAppCert(codeId);
         verifier.verify(proof);
+    }
+
+    // verifiedBootHash of the Pixel 6 fixture (extracted from the leaf extension).
+    bytes32 constant PIXEL6_VBH =
+        0xcc3c0e4ab69269c69acea5a7c578fa531c3ed0dfcf3594278e632dde38b01bbf;
+
+    function test_VerifyWithBootHash_Match() public {
+        bytes memory proof = _buildProof(CAPTURED_CHALLENGE);
+        verifier.verifyWithBootHash(proof, PIXEL6_VBH);
+    }
+
+    function test_VerifyWithBootHash_Mismatch() public {
+        bytes memory proof = _buildProof(CAPTURED_CHALLENGE);
+        bytes32 wrongHash = bytes32(uint256(PIXEL6_VBH) ^ 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                AndroidKeyAttestationVerifier.VerifiedBootHashMismatch.selector,
+                PIXEL6_VBH,
+                wrongHash
+            )
+        );
+        verifier.verifyWithBootHash(proof, wrongHash);
+    }
+
+    // --- Self-rooted GrapheneOS appliance (yellow / custom AVB key) ---
+
+    function test_Appliance_PlainVerifyRejectsYellow() public {
+        bytes memory proof = _buildProofFrom(APPLIANCE_PEM, APPLIANCE_CHALLENGE);
+        // The default OEM-rooted path requires Verified (green). Our custom-key
+        // appliance is SelfSigned (yellow, state 1) → rejected.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                AndroidKeyAttestationVerifier.VerifiedBootStateRejected.selector,
+                uint8(1)
+            )
+        );
+        verifier.verify(proof);
+    }
+
+    function test_Appliance_AllowlistedBootHashVerifies() public {
+        bytes memory proof = _buildProofFrom(APPLIANCE_PEM, APPLIANCE_CHALLENGE);
+        // Not yet allow-listed → reverts.
+        vm.expectRevert(
+            abi.encodeWithSelector(
+                AndroidKeyAttestationVerifier.BootHashNotAllowed.selector,
+                APPLIANCE_VBH
+            )
+        );
+        verifier.verifyAllowlisted(proof);
+
+        // Allow-list the image digest → verifies, and codeId IS that digest
+        // (the OS+app image identity, covering the baked-in APK via dm-verity).
+        verifier.addAllowedBootHash(APPLIANCE_VBH);
+        (bytes32 codeId, bytes memory pubkey, bytes memory userData) =
+            verifier.verifyAllowlisted(proof);
+        assertEq(codeId, APPLIANCE_VBH, "codeId is the vbmeta digest");
+        assertGt(pubkey.length, 50, "leaf pubkey present");
+        assertEq(userData, bytes(APPLIANCE_CHALLENGE), "challenge echoed");
+    }
+
+    function test_Appliance_DirectBootHashPinVerifies() public {
+        bytes memory proof = _buildProofFrom(APPLIANCE_PEM, APPLIANCE_CHALLENGE);
+        (bytes32 codeId,,) = verifier.verifyWithBootHash(proof, APPLIANCE_VBH);
+        assertEq(codeId, APPLIANCE_VBH, "pinned digest returned as codeId");
     }
 
     function test_MinOsPatchLevelEnforced() public {
