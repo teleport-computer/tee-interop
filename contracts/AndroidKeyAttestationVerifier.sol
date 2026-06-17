@@ -236,9 +236,17 @@ contract AndroidKeyAttestationVerifier is IVerifier {
             // OEM-rooted path: require Verified (green) — Google/OEM factory key.
             if (kd.verifiedBootState != 0) revert VerifiedBootStateRejected(kd.verifiedBootState);
         } else {
-            // Self-rooted appliance: a custom AVB key yields SelfSigned (yellow,
-            // state 1). The pinned digest is the trust anchor; it embeds the AVB
-            // public key, so matching it transitively pins the signing key too.
+            // Self-rooted appliance path. Trust model is MRENCLAVE, NOT MRSIGNER:
+            // the ONLY anchors are deviceLocked (below) + verifiedBootHash on the
+            // allow-list. The signing key (verifiedBootKey) is never read — a
+            // custom AVB key reports SelfSigned (yellow) and that is fine.
+            //
+            // NOTE: the verifiedBootState <= 1 line is a VESTIGIAL, redundant
+            // guard — deviceLocked == true already implies state is green(0) or
+            // yellow(1) (orange/red come with unlocked/failed boots). It is kept
+            // only as defense-in-depth and is NOT a trust input; do not read it
+            // as "we care which key signed." Dropping it would not weaken the
+            // model. Left in to avoid a redeploy; see docs/android for the model.
             if (kd.verifiedBootState > 1) revert VerifiedBootStateRejected(kd.verifiedBootState);
             if (kd.verifiedBootHash != expectedVerifiedBootHash) {
                 revert VerifiedBootHashMismatch(kd.verifiedBootHash, expectedVerifiedBootHash);
