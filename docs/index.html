@@ -2,108 +2,215 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>tee-interop · multi-verifier TEE registry</title>
+<title>tee-interop · a TEE network with no center of trust</title>
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <style>
-:root {
-    --bg: #ffffff;
-    --panel: #f7f8fa;
-    --border: #e3e6ea;
-    --text: #1b1f24;
-    --dim: #5b626b;
-    --accent: #0a7d3f;
-    --warn: #9a6700;
-    --link: #0a59c2;
-}
-* { box-sizing: border-box; }
-body {
-    margin: 0; padding: 24px;
-    background: var(--bg); color: var(--text);
-    font: 14px/1.5 ui-monospace, "SF Mono", Menlo, monospace;
-    max-width: 920px; margin-inline: auto;
-}
-h1 { font-size: 18px; margin: 0 0 4px; font-weight: 600; }
-.sub { color: var(--dim); margin-bottom: 24px; }
-h2 { font-size: 13px; margin: 24px 0 8px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 600; }
-a { color: var(--link); text-decoration: none; }
-a:hover { text-decoration: underline; }
-.panel { background: var(--panel); border: 1px solid var(--border); border-radius: 6px; padding: 16px; margin-bottom: 16px; line-height: 1.7; }
-table { width: 100%; border-collapse: collapse; font-size: 13px; }
-th, td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
-th { color: var(--dim); font-weight: 600; text-transform: uppercase; font-size: 11px; letter-spacing: 0.06em; }
-td.platform { color: var(--text); font-weight: 600; }
-td.status { font-size: 12px; }
-.pill { display: inline-block; padding: 2px 7px; border-radius: 999px; font-size: 11px; font-weight: 600; }
-.pill.live { background: #e8f5ec; color: var(--accent); }
-.pill.done { background: #e7eefc; color: var(--link); }
-.pill.ref  { background: #eceef1; color: var(--dim); }
-.pill.wip  { background: #fff5e0; color: var(--warn); }
-code { font-family: inherit; color: #0b5b2e; }
+:root{--bg:#ffffff;--panel:#f7f8fa;--border:#e3e6ea;--text:#1b1f24;--dim:#5b626b;--accent:#0a7d3f;--accent-bg:#e8f5ec;--link:#0a59c2;--link-bg:#e7eefc;--warn:#9a6700;--warn-bg:#fff5e0}
+*{box-sizing:border-box}
+body{margin:0;padding:34px 20px;background:var(--bg);color:var(--text);
+  font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  max-width:840px;margin-inline:auto}
+h1{font-size:27px;line-height:1.2;margin:0 0 8px;font-weight:700;letter-spacing:-.02em}
+h2{font-size:12px;margin:34px 0 12px;color:var(--dim);text-transform:uppercase;letter-spacing:.08em;font-weight:700}
+.sub{color:var(--dim);margin:0 0 18px;font-size:17px;line-height:1.5}
+p{margin:0 0 12px}
+a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
+code{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:.9em;color:#0b5b2e;background:var(--accent-bg);padding:1px 5px;border-radius:4px}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:14px;line-height:1.6}
+.repo{font-size:13.5px}
+
+/* ---- constellation ---- */
+.diagram{margin:6px 0 8px}
+.diagram svg{width:100%;height:auto;display:block}
+.spoke{fill:none}
+.spoke.live{stroke:var(--accent);stroke-width:2}
+.spoke.dep{stroke:var(--link);stroke-width:2}
+.spoke.ref{stroke:#d6dade;stroke-width:1.5;stroke-dasharray:3 5}
+.spoke.flow{stroke-dasharray:5 8;animation:flow 1.5s linear infinite}
+@keyframes flow{to{stroke-dashoffset:-26}}
+.node{fill:#fff;stroke-width:2}
+.node.live{stroke:var(--accent)}.node.dep{stroke:var(--link)}.node.ref{stroke:#dfe3e8}
+.hub{fill:#fbfdfb;stroke:#1b1f24;stroke-width:2.5}
+.lbl{font:700 14px system-ui,sans-serif;fill:var(--text);text-anchor:middle}
+.lbl.ref{fill:#9aa0a8;font-weight:600}
+.sub2{font:600 11px system-ui,sans-serif;text-anchor:middle;letter-spacing:.02em}
+.sub2.live{fill:var(--accent)}.sub2.dep{fill:var(--link)}.sub2.ref{fill:#aeb4bb}
+.hub-t{font:800 16px system-ui,sans-serif;fill:var(--text);text-anchor:middle}
+.hub-s{font:600 11px system-ui,sans-serif;fill:var(--dim);text-anchor:middle;letter-spacing:.05em}
+a.nlink{cursor:pointer}
+a.nlink:hover .lbl{text-decoration:underline}
+a.nlink:hover .node{stroke-width:3.2}
+.legend{display:flex;gap:18px;flex-wrap:wrap;font-size:12.5px;color:var(--dim);margin:2px 2px 0}
+.legend .dot{display:inline-block;width:9px;height:9px;border-radius:999px;margin-right:6px;vertical-align:middle}
+@media (prefers-reduced-motion:reduce){.spoke.flow{animation:none}}
+
+/* ---- demo cards ---- */
+.cards{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media (max-width:560px){.cards{grid-template-columns:1fr}}
+.card{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:16px 17px;display:flex;flex-direction:column}
+.card h3{margin:0 0 2px;font-size:15px}
+.card .meta{color:var(--dim);font-size:12.5px;margin:0 0 9px}
+.card p{font-size:13.5px;color:var(--text);margin:0 0 13px}
+.card .go{margin-top:auto;font-weight:600}
+.pill{display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;letter-spacing:.02em;vertical-align:middle}
+.pill.live{background:var(--accent-bg);color:var(--accent)}
+.pill.dep{background:var(--link-bg);color:var(--link)}
+.pill.ref{background:#eceef1;color:var(--dim)}
+.rows{border:1px solid var(--border);border-radius:10px;overflow:hidden}
+.r{display:flex;gap:12px;align-items:center;padding:11px 15px;border-bottom:1px solid var(--border);font-size:13.5px}
+.r:last-child{border-bottom:none}
+.r .name{font-weight:600;min-width:150px}
+.r .desc{color:var(--dim);flex:1}
 </style>
 </head>
 <body>
 
-<h1>tee-interop</h1>
-<div class="sub">Multi-verifier TEE membership registry. Each attestation platform plugs in as <code>IVerifier</code>; the registry has zero platform-specific code.</div>
+<h1>A TEE network with no center of trust</h1>
+<p class="sub">Wildly different trusted hardware — a datacenter VM, a CI runner, a $40 microcontroller,
+a re-flashed phone — each proves <i>what code it runs</i> to one neutral contract on Base. Once verified,
+they become peers.</p>
 
-<div class="panel">
-    <a href="https://github.com/teleport-computer/tee-interop">github.com/teleport-computer/tee-interop</a> · <a href="https://github.com/teleport-computer/tee-interop#the-interface-erc-733">ERC-733 interface</a>
+<div class="diagram">
+<svg viewBox="0 0 800 520" role="img" aria-label="Network of TEE platforms connected to a central registry contract">
+  <!-- spokes (drawn first, behind nodes/hub) -->
+  <line class="spoke flow live" x1="400" y1="250" x2="400" y2="60"/>
+  <line class="spoke flow dep"  x1="400" y1="250" x2="646" y2="131"/>
+  <line class="spoke flow dep"  x1="400" y1="250" x2="707" y2="292"/>
+  <line class="spoke ref"       x1="400" y1="250" x2="537" y2="421"/>
+  <line class="spoke ref"       x1="400" y1="250" x2="263" y2="421"/>
+  <line class="spoke ref"       x1="400" y1="250" x2="93"  y2="292"/>
+  <line class="spoke flow live" x1="400" y1="250" x2="154" y2="131"/>
+
+  <!-- hub -->
+  <rect class="hub" x="312" y="210" width="176" height="80" rx="15"/>
+  <text class="hub-t" x="400" y="244">IVerifier registry</text>
+  <text class="hub-s" x="400" y="266">smart contract · Base</text>
+
+  <!-- n0 Pixel 6a (live) -->
+  <a class="nlink" href="./android/">
+    <circle class="node live" cx="400" cy="60" r="34"/>
+    <svg x="383" y="43" width="34" height="34" viewBox="0 0 24 24"><path fill="#15693c" d="M18.4395 5.5586c-.675 1.1664-1.352 2.3318-2.0274 3.498-.0366-.0155-.0742-.0286-.1113-.043-1.8249-.6957-3.484-.8-4.42-.787-1.8551.0185-3.3544.4643-4.2597.8203-.084-.1494-1.7526-3.021-2.0215-3.4864a1.1451 1.1451 0 0 0-.1406-.1914c-.3312-.364-.9054-.4859-1.379-.203-.475.282-.7136.9361-.3886 1.5019 1.9466 3.3696-.0966-.2158 1.9473 3.3593.0172.031-.4946.2642-1.3926 1.0177C2.8987 12.176.452 14.772 0 18.9902h24c-.119-1.1108-.3686-2.099-.7461-3.0683-.7438-1.9118-1.8435-3.2928-2.7402-4.1836a12.1048 12.1048 0 0 0-2.1309-1.6875c.6594-1.122 1.312-2.2559 1.9649-3.3848.2077-.3615.1886-.7956-.0079-1.1191a1.1001 1.1001 0 0 0-.8515-.5332c-.5225-.0536-.9392.3128-1.0488.5449zm-.0391 8.461c.3944.5926.324 1.3306-.1563 1.6503-.4799.3197-1.188.0985-1.582-.4941-.3944-.5927-.324-1.3307.1563-1.6504.4727-.315 1.1812-.1086 1.582.4941zM7.207 13.5273c.4803.3197.5506 1.0577.1563 1.6504-.394.5926-1.1038.8138-1.584.4941-.48-.3197-.5503-1.0577-.1563-1.6504.4008-.6021 1.1087-.8106 1.584-.4941z"/></svg>
+    <text class="lbl" x="400" y="118">Pixel 6a</text>
+    <text class="sub2 live" x="400" y="134">Titan M2 · verify →</text>
+  </a>
+
+  <!-- n1 GitHub Actions (deployed) -->
+  <g>
+    <circle class="node dep" cx="646" cy="131" r="34"/>
+    <svg x="629" y="114" width="34" height="34" viewBox="0 0 24 24"><path fill="#0a59c2" d="M10.984 13.836a.5.5 0 0 1-.353-.146l-.745-.743a.5.5 0 1 1 .706-.708l.392.391 1.181-1.18a.5.5 0 0 1 .708.707l-1.535 1.533a.504.504 0 0 1-.354.146zm9.353-.147l1.534-1.532a.5.5 0 0 0-.707-.707l-1.181 1.18-.392-.391a.5.5 0 1 0-.706.708l.746.743a.497.497 0 0 0 .706-.001zM4.527 7.452l2.557-1.585A1 1 0 0 0 7.09 4.17L4.533 2.56A1 1 0 0 0 3 3.406v3.196a1.001 1.001 0 0 0 1.527.85zm2.03-2.436L4 6.602V3.406l2.557 1.61zM24 12.5c0 1.93-1.57 3.5-3.5 3.5a3.503 3.503 0 0 1-3.46-3h-2.08a3.503 3.503 0 0 1-3.46 3 3.502 3.502 0 0 1-3.46-3h-.558c-.972 0-1.85-.399-2.482-1.042V17c0 1.654 1.346 3 3 3h.04c.244-1.693 1.7-3 3.46-3 1.93 0 3.5 1.57 3.5 3.5S13.43 24 11.5 24a3.502 3.502 0 0 1-3.46-3H8c-2.206 0-4-1.794-4-4V9.899A5.008 5.008 0 0 1 0 5c0-2.757 2.243-5 5-5s5 2.243 5 5a5.005 5.005 0 0 1-4.952 4.998A2.482 2.482 0 0 0 7.482 12h.558c.244-1.693 1.7-3 3.46-3a3.502 3.502 0 0 1 3.46 3h2.08a3.503 3.503 0 0 1 3.46-3c1.93 0 3.5 1.57 3.5 3.5zm-15 8c0 1.378 1.122 2.5 2.5 2.5s2.5-1.122 2.5-2.5-1.122-2.5-2.5-2.5S9 19.122 9 20.5zM5 9c2.206 0 4-1.794 4-4S7.206 1 5 1 1 2.794 1 5s1.794 4 4 4zm9 3.5c0-1.378-1.122-2.5-2.5-2.5S9 11.122 9 12.5s1.122 2.5 2.5 2.5 2.5-1.122 2.5-2.5zm9 0c0-1.378-1.122-2.5-2.5-2.5S18 11.122 18 12.5s1.122 2.5 2.5 2.5 2.5-1.122 2.5-2.5zm-13 8a.5.5 0 1 0 1 0 .5.5 0 0 0-1 0zm2 0a.5.5 0 1 0 1 0 .5.5 0 0 0-1 0zm12 0c0 1.93-1.57 3.5-3.5 3.5a3.503 3.503 0 0 1-3.46-3.002c-.007.001-.013.005-.021.005l-.506.017h-.017a.5.5 0 0 1-.016-.999l.506-.017c.018-.002.035.006.052.007A3.503 3.503 0 0 1 20.5 17c1.93 0 3.5 1.57 3.5 3.5zm-1 0c0-1.378-1.122-2.5-2.5-2.5S18 19.122 18 20.5s1.122 2.5 2.5 2.5 2.5-1.122 2.5-2.5z"/></svg>
+    <text class="lbl" x="646" y="189">GitHub Actions</text>
+    <text class="sub2 dep" x="646" y="205">Sigstore CI · adapter</text>
+  </g>
+
+  <!-- n2 dstack (deployed) -->
+  <g>
+    <circle class="node dep" cx="707" cy="292" r="34"/>
+    <svg x="690" y="275" width="34" height="34" viewBox="0 0 24 24">
+      <g fill="none" stroke="#0a59c2" stroke-width="1.7" stroke-linejoin="round">
+        <rect x="3.5" y="4" width="17" height="5.2" rx="1.3"/>
+        <rect x="3.5" y="10.4" width="17" height="5.2" rx="1.3"/>
+        <rect x="3.5" y="16.8" width="17" height="5.2" rx="1.3"/>
+      </g>
+      <g fill="#0a59c2"><circle cx="6.6" cy="6.6" r=".95"/><circle cx="6.6" cy="13" r=".95"/><circle cx="6.6" cy="19.4" r=".95"/></g>
+    </svg>
+    <text class="lbl" x="707" y="350">dstack</text>
+    <text class="sub2 dep" x="707" y="366">Intel TDX · registered</text>
+  </g>
+
+  <!-- n3 Intel (reference) -->
+  <g>
+    <circle class="node ref" cx="537" cy="421" r="34"/>
+    <svg x="521" y="409" width="32" height="24" viewBox="0 0 24 24"><path fill="#b6bcc3" d="M20.42 7.345v9.18h1.651v-9.18zM0 7.475v1.737h1.737V7.474zm9.78.352v6.053c0 .513.044.945.13 1.292.087.34.235.618.44.828.203.21.475.359.803.451.334.093.754.136 1.255.136h.216v-1.533c-.24 0-.445-.012-.593-.037a.672.672 0 0 1-.39-.173.693.693 0 0 1-.173-.377 4.002 4.002 0 0 1-.037-.606v-2.182h1.193v-1.416h-1.193V7.827zm-3.505 2.312c-.396 0-.76.08-1.082.241-.327.161-.6.384-.822.668l-.087.117v-.902H2.658v6.256h1.639v-3.214c.018-.588.16-1.02.433-1.299.29-.297.642-.445 1.044-.445.476 0 .841.149 1.082.433.235.284.359.686.359 1.2v3.324h1.663V12.97c.006-.89-.229-1.595-.686-2.09-.458-.495-1.1-.742-1.917-.742zm10.065.006a3.252 3.252 0 0 0-2.306.946c-.29.29-.525.637-.692 1.033a3.145 3.145 0 0 0-.254 1.273c0 .452.08.878.241 1.274.161.395.39.742.674 1.032.284.29.637.526 1.045.693.408.173.86.26 1.342.26 1.397 0 2.262-.637 2.782-1.23l-1.187-.904c-.248.297-.841.699-1.583.699-.464 0-.847-.105-1.138-.321a1.588 1.588 0 0 1-.593-.872l-.019-.056h4.915v-.587c0-.451-.08-.872-.235-1.267a3.393 3.393 0 0 0-.661-1.033 3.013 3.013 0 0 0-1.02-.692 3.345 3.345 0 0 0-1.311-.248zm-16.297.118v6.256h1.651v-6.256zm16.278 1.286c1.132 0 1.664.797 1.664 1.255l-3.32.006c0-.458.525-1.255 1.656-1.261z"/></svg>
+    <text class="lbl ref" x="537" y="479">Intel TDX / SGX</text>
+    <text class="sub2 ref" x="537" y="495">reference</text>
+  </g>
+
+  <!-- n4 AMD (reference) -->
+  <g>
+    <circle class="node ref" cx="263" cy="421" r="34"/>
+    <svg x="247" y="409" width="32" height="24" viewBox="0 0 24 24"><path fill="#b6bcc3" d="M18.324 9.137l1.559 1.56h2.556v2.557L24 14.814V9.137zM2 9.52l-2 4.96h1.309l.37-.982H3.9l.408.982h1.338L3.432 9.52zm4.209 0v4.955h1.238v-3.092l1.338 1.562h.188l1.338-1.556v3.091h1.238V9.52H10.47l-1.592 1.845L7.287 9.52zm6.283 0v4.96h2.057c1.979 0 2.88-1.046 2.88-2.472 0-1.36-.937-2.488-2.747-2.488zm1.237.91h.792c1.17 0 1.63.711 1.63 1.57 0 .728-.372 1.572-1.616 1.572h-.806zm-10.985.273l.791 1.932H2.008zm17.137.307l-1.604 1.603v2.25h2.246l1.604-1.607h-2.246z"/></svg>
+    <text class="lbl ref" x="263" y="479">AMD SEV-SNP</text>
+    <text class="sub2 ref" x="263" y="495">reference</text>
+  </g>
+
+  <!-- n5 AWS Nitro (reference) -->
+  <g>
+    <circle class="node ref" cx="93" cy="292" r="34"/>
+    <svg x="76" y="280" width="34" height="22" viewBox="0 0 24 24"><path fill="#b6bcc3" d="M6.763 10.036c0 .296.032.535.088.71.064.176.144.368.256.576.04.063.056.127.056.183 0 .08-.048.16-.152.24l-.503.335a.383.383 0 0 1-.208.072c-.08 0-.16-.04-.239-.112a2.47 2.47 0 0 1-.287-.375 6.18 6.18 0 0 1-.248-.471c-.622.734-1.405 1.101-2.347 1.101-.67 0-1.205-.191-1.596-.574-.391-.384-.59-.894-.59-1.533 0-.678.239-1.23.726-1.644.487-.415 1.133-.623 1.955-.623.272 0 .551.024.846.064.296.04.6.104.918.176v-.583c0-.607-.127-1.03-.375-1.277-.255-.248-.686-.367-1.3-.367-.28 0-.568.031-.863.103-.295.072-.583.16-.862.272a2.287 2.287 0 0 1-.28.104.488.488 0 0 1-.127.023c-.112 0-.168-.08-.168-.247v-.391c0-.128.016-.224.056-.28a.597.597 0 0 1 .224-.167c.279-.144.614-.264 1.005-.36a4.84 4.84 0 0 1 1.246-.151c.95 0 1.644.216 2.091.647.439.43.662 1.085.662 1.963v2.586zm-3.24 1.214c.263 0 .534-.048.822-.144.287-.096.543-.271.758-.51.128-.152.224-.32.272-.512.047-.191.08-.423.08-.694v-.335a6.66 6.66 0 0 0-.735-.136 6.02 6.02 0 0 0-.75-.048c-.535 0-.926.104-1.19.32-.263.215-.39.518-.39.917 0 .375.095.655.295.846.191.2.47.296.838.296zm6.41.862c-.144 0-.24-.024-.304-.08-.064-.048-.12-.16-.168-.311L7.586 5.55a1.398 1.398 0 0 1-.072-.32c0-.128.064-.2.191-.2h.783c.151 0 .255.025.31.08.065.048.113.16.16.312l1.342 5.284 1.245-5.284c.04-.16.088-.264.151-.312a.549.549 0 0 1 .32-.08h.638c.152 0 .256.025.32.08.063.048.12.16.151.312l1.261 5.348 1.381-5.348c.048-.16.104-.264.16-.312a.52.52 0 0 1 .311-.08h.743c.127 0 .2.065.2.2 0 .04-.009.08-.017.128a1.137 1.137 0 0 1-.056.2l-1.923 6.17c-.048.16-.104.263-.168.311a.51.51 0 0 1-.303.08h-.687c-.151 0-.255-.024-.32-.08-.063-.056-.119-.16-.15-.32l-1.238-5.148-1.23 5.14c-.04.16-.087.264-.15.32-.065.056-.177.08-.32.08zm10.256.215c-.415 0-.83-.048-1.229-.143-.399-.096-.71-.2-.918-.32-.128-.071-.215-.151-.247-.223a.563.563 0 0 1-.048-.224v-.407c0-.167.064-.247.183-.247.048 0 .096.008.144.024.048.016.12.048.2.08.271.12.566.215.878.279.319.064.63.096.95.096.502 0 .894-.088 1.165-.264a.86.86 0 0 0 .415-.758.777.777 0 0 0-.215-.559c-.144-.151-.416-.287-.807-.415l-1.157-.36c-.583-.183-1.014-.454-1.277-.813a1.902 1.902 0 0 1-.4-1.158c0-.335.073-.63.216-.886.144-.255.335-.479.575-.654.24-.184.51-.32.83-.415.32-.096.655-.136 1.006-.136.175 0 .359.008.535.032.183.024.35.056.518.088.16.04.312.08.455.127.144.048.256.096.336.144a.69.69 0 0 1 .24.2.43.43 0 0 1 .071.263v.375c0 .168-.064.256-.184.256a.83.83 0 0 1-.303-.096 3.652 3.652 0 0 0-1.532-.311c-.455 0-.815.071-1.062.223-.248.152-.375.383-.375.71 0 .224.08.416.24.567.159.152.454.304.877.44l1.134.358c.574.184.99.44 1.237.767.247.327.367.702.367 1.117 0 .343-.072.655-.207.926-.144.272-.336.511-.583.703-.248.2-.543.343-.886.447-.36.111-.734.167-1.142.167zM21.698 16.207c-2.626 1.94-6.442 2.969-9.722 2.969-4.598 0-8.74-1.7-11.87-4.526-.247-.223-.024-.527.272-.351 3.384 1.963 7.559 3.153 11.877 3.153 2.914 0 6.114-.607 9.06-1.852.439-.2.814.287.383.607zM22.792 14.961c-.336-.43-2.22-.207-3.074-.103-.255.032-.295-.192-.063-.36 1.5-1.053 3.967-.75 4.254-.399.287.36-.08 2.826-1.485 4.007-.215.184-.423.088-.327-.151.32-.79 1.03-2.57.695-2.994z"/></svg>
+    <text class="lbl ref" x="93" y="350">AWS Nitro</text>
+    <text class="sub2 ref" x="93" y="366">reference</text>
+  </g>
+
+  <!-- n6 SiLabs SiMG301 (live) -->
+  <a class="nlink" href="./silabs/">
+    <circle class="node live" cx="154" cy="131" r="34"/>
+    <svg x="137" y="114" width="34" height="34" viewBox="0 0 24 24">
+      <g fill="none" stroke="#15693c" stroke-width="1.6" stroke-linecap="round">
+        <rect x="6.5" y="6.5" width="11" height="11" rx="1.8"/>
+        <path d="M9 6.5V4M12 6.5V4M15 6.5V4M9 17.5V20M12 17.5V20M15 17.5V20M6.5 9H4M6.5 12H4M6.5 15H4M17.5 9H20M17.5 12H20M17.5 15H20"/>
+      </g>
+      <rect x="9.4" y="9.4" width="5.2" height="5.2" rx="1" fill="#15693c"/>
+    </svg>
+    <text class="lbl" x="154" y="189">SiMG301</text>
+    <text class="sub2 live" x="154" y="205">Secure Vault · verify →</text>
+  </a>
+</svg>
 </div>
 
-<h2>Verifier demos</h2>
-<div class="panel" style="padding: 0;">
-<table>
-<thead><tr><th>Platform</th><th>Attestation</th><th>Status</th><th>Live demo</th></tr></thead>
-<tbody>
-<tr>
-    <td class="platform">Silicon Labs Secure Vault</td>
-    <td>PSA EAT (COSE_Sign1 / P-256), factory-rooted</td>
-    <td class="status"><span class="pill live">live</span></td>
-    <td><a href="./silabs/">verify a real SiMG301 on-chain →</a></td>
-</tr>
-<tr>
-    <td class="platform">Android Key Attestation</td>
-    <td>Pixel 6a + Titan M2; <code>verifiedBootHash</code> measures a system-baked APK</td>
-    <td class="status"><span class="pill live">live</span></td>
-    <td><a href="./android/">verify a real Pixel 6a on-chain →</a></td>
-</tr>
-<tr>
-    <td class="platform">dstack</td>
-    <td>KMS sig chain (secp256k1)</td>
-    <td class="status"><span class="pill done">deployed</span></td>
-    <td class="status">—</td>
-</tr>
-<tr>
-    <td class="platform">GitHub / Sigstore</td>
-    <td>ZK proof of Sigstore cert chain</td>
-    <td class="status"><span class="pill done">adapter written</span></td>
-    <td class="status">—</td>
-</tr>
-<tr>
-    <td class="platform">AWS Nitro</td>
-    <td>COSE Sign1 / P-384 / x509</td>
-    <td class="status"><span class="pill ref">reference</span></td>
-    <td class="status">—</td>
-</tr>
-<tr>
-    <td class="platform">Intel TDX / SGX</td>
-    <td>DCAP quote (P-256)</td>
-    <td class="status"><span class="pill ref">reference</span></td>
-    <td class="status">—</td>
-</tr>
-<tr>
-    <td class="platform">AMD SEV-SNP</td>
-    <td>SEV-SNP report + VEK chain</td>
-    <td class="status"><span class="pill ref">reference</span></td>
-    <td class="status">—</td>
-</tr>
-</tbody>
-</table>
+<div class="legend">
+  <span><span class="dot" style="background:var(--accent)"></span>live demo — click a green node</span>
+  <span><span class="dot" style="background:var(--link)"></span>on-chain adapter</span>
+  <span><span class="dot" style="background:#cdd2d8"></span>reference verifier</span>
+</div>
+
+<div class="panel" style="margin-top:18px">
+<p>Every node runs different silicon with a different root of trust — Intel, AMD, Google's Titan&nbsp;M2,
+a Silicon&nbsp;Labs secure element, even GitHub's Sigstore CI identity. None trust each other a priori. What
+they share is one smart contract: each platform plugs in as an <code>IVerifier</code>, submits its <i>native</i>
+attestation, and the contract checks the signature against that vendor's published root. The registry itself has
+<b>zero platform-specific code</b>.</p>
+<p style="margin-bottom:0">Once verified, a member can hand ECIES-encrypted secrets to any other verified member
+via <code>onboard()</code> — no shared KMS, no central authority, no operator to trust. The chain is the only
+thing they have in common. A GitHub&nbsp;Actions job proving which workflow built an artifact and a $40
+microcontroller proving its firmware hash end up as equal citizens of the same registry.</p>
+</div>
+
+<h2>Live — verify real hardware in your browser</h2>
+<div class="cards">
+  <div class="card">
+    <h3>Silicon Labs SiMG301 <span class="pill live">live</span></h3>
+    <div class="meta">PSA EAT · COSE_Sign1 / P-256 · factory-rooted</div>
+    <p>A $40 Secure Vault microcontroller signs the SHA-256 of its own firmware. Verified on-chain with Base's
+    native secp256r1 precompile.</p>
+    <a class="go" href="./silabs/">verify a real SiMG301 on-chain →</a>
+  </div>
+  <div class="card">
+    <h3>Pixel 6a + Titan M2 <span class="pill live">live</span></h3>
+    <div class="meta">Android Key Attestation · 5-cert chain to a Google root</div>
+    <p>A re-flashed phone whose <code>verifiedBootHash</code> measures a system-baked APK — MRENCLAVE-style
+    "measure the image," on a phone.</p>
+    <a class="go" href="./android/">verify a real Pixel 6a on-chain →</a>
+  </div>
+</div>
+
+<h2>Also in the registry</h2>
+<div class="rows">
+  <div class="r"><span class="name">dstack <span class="pill dep">registered</span></span><span class="desc">Intel TDX confidential VM (Phala) · KMS sig chain, secp256k1 — a live registry member alongside the SiMG301</span></div>
+  <div class="r"><span class="name">GitHub / Sigstore <span class="pill dep">adapter</span></span><span class="desc">ZK proof of a Sigstore cert chain — a CI runner as a TEE peer (write-up in progress)</span></div>
+  <div class="r"><span class="name">AWS Nitro <span class="pill ref">reference</span></span><span class="desc">COSE_Sign1 / P-384 / x509 enclave attestation</span></div>
+  <div class="r"><span class="name">Intel TDX / SGX <span class="pill ref">reference</span></span><span class="desc">DCAP quote (P-256)</span></div>
+  <div class="r"><span class="name">AMD SEV-SNP <span class="pill ref">reference</span></span><span class="desc">SEV-SNP report + VEK chain</span></div>
 </div>
 
 <h2>About</h2>
 <div class="panel">
-    Members register their TEE-attested identity once; verified peers exchange ECIES-encrypted secrets via <code>onboard()</code> without any shared KMS infrastructure. See the <a href="https://github.com/teleport-computer/tee-interop#the-interface-erc-733">ERC-733</a> writeup for the interface design and the <a href="https://github.com/teleport-computer/tee-interop#relationship-to-sparsity-8004-poc">Sparsity 8004 comparison</a> for how this differs from the existing reference impl.
+<p>Members register their TEE-attested identity once; verified peers exchange ECIES-encrypted secrets via
+<code>onboard()</code> without any shared KMS infrastructure. See the
+<a href="https://github.com/teleport-computer/tee-interop#the-interface-erc-733">ERC-733</a> write-up for the
+interface design and the
+<a href="https://github.com/teleport-computer/tee-interop#relationship-to-sparsity-8004-poc">Sparsity 8004
+comparison</a> for how this differs from the existing reference impl.</p>
+<p class="repo" style="margin-bottom:0"><a href="https://github.com/teleport-computer/tee-interop">github.com/teleport-computer/tee-interop</a></p>
 </div>
 
 </body>
