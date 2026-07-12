@@ -185,7 +185,10 @@ def main():
     ap.add_argument("pem", type=Path, help="cert chain PEM, leaf-first")
     ap.add_argument("challenge", type=str, help="expected challenge string")
     args = ap.parse_args()
-    proof = build_proof(args.pem, args.challenge.encode())
+    # Leaf challenges are often raw bytes (e.g. SHA-256(nonce||apk_hash)); accept
+    # a 0x-hex arg for those, otherwise treat the arg as a utf-8 string.
+    challenge = bytes.fromhex(args.challenge[2:]) if args.challenge.startswith("0x") else args.challenge.encode()
+    proof = build_proof(args.pem, challenge)
     # forge test --ffi expects bare hex with 0x prefix, no trailing newline.
     sys.stdout.write("0x" + proof.hex())
 

@@ -30,7 +30,7 @@ contract DeployAndroidVerifier is Script {
         roots[0] = ROOT_FP;
         roots[1] = APPLIANCE_ROOT_FP;
         AndroidKeyAttestationVerifier verifier =
-            new AndroidKeyAttestationVerifier(roots);
+            new AndroidKeyAttestationVerifier(roots, false);
         verifier.addAllowedBootHash(APPLIANCE_BOOT_HASH);
 
         TEEBridge bridge = new TEEBridge();

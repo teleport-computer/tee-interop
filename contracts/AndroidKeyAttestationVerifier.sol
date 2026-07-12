@@ -42,6 +42,14 @@ contract AndroidKeyAttestationVerifier is IVerifier {
 
     address public owner;
 
+    /// When true this is an explicitly-marked TESTNET instance: it still runs
+    /// the full validation path (genuine chain, StrongBox, challenge binding,
+    /// verifiedBootHash) but RECORDS an unlocked / non-green boot state instead
+    /// of reverting. The true posture is packed into the returned userData so
+    /// the on-chain member record cannot be mistaken for a locked device.
+    /// A production instance sets this false and rejects unlocked devices.
+    bool public immutable testnetMode;
+
     struct AndroidProof {
         /// The full cert chain, leaf-first. Each entry is the DER encoding
         /// of one X.509 certificate. `certs[0]` is the leaf carrying the
@@ -107,8 +115,9 @@ contract AndroidKeyAttestationVerifier is IVerifier {
 
     modifier onlyOwner() { if (msg.sender != owner) revert NotOwner(); _; }
 
-    constructor(bytes32[] memory initialRoots) {
+    constructor(bytes32[] memory initialRoots, bool _testnetMode) {
         owner = msg.sender;
+        testnetMode = _testnetMode;
         for (uint256 i = 0; i < initialRoots.length; i++) {
             allowedRootFingerprints[initialRoots[i]] = true;
             emit RootAllowed(initialRoots[i]);
@@ -234,7 +243,7 @@ contract AndroidKeyAttestationVerifier is IVerifier {
 
         if (expectedVerifiedBootHash == bytes32(0)) {
             // OEM-rooted path: require Verified (green) — Google/OEM factory key.
-            if (kd.verifiedBootState != 0) revert VerifiedBootStateRejected(kd.verifiedBootState);
+            if (kd.verifiedBootState != 0 && !testnetMode) revert VerifiedBootStateRejected(kd.verifiedBootState);
         } else {
             // Self-rooted appliance path. Trust model is MRENCLAVE, NOT MRSIGNER:
             // the ONLY anchors are deviceLocked (below) + verifiedBootHash on the
@@ -247,12 +256,13 @@ contract AndroidKeyAttestationVerifier is IVerifier {
             // only as defense-in-depth and is NOT a trust input; do not read it
             // as "we care which key signed." Dropping it would not weaken the
             // model. Left in to avoid a redeploy; see docs/android for the model.
-            if (kd.verifiedBootState > 1) revert VerifiedBootStateRejected(kd.verifiedBootState);
+            if (kd.verifiedBootState > 1 && !testnetMode) revert VerifiedBootStateRejected(kd.verifiedBootState);
+            // OS binding is NEVER relaxed: the measured image must match the pin.
             if (kd.verifiedBootHash != expectedVerifiedBootHash) {
                 revert VerifiedBootHashMismatch(kd.verifiedBootHash, expectedVerifiedBootHash);
             }
         }
-        if (!kd.deviceLocked) revert DeviceNotLocked();
+        if (!kd.deviceLocked && !testnetMode) revert DeviceNotLocked();
 
         if (requireAppAllowlist && !allowedAppCertHashes[kd.appCertSha256]) {
             revert AppCertNotAllowed(kd.appCertSha256);
@@ -272,7 +282,12 @@ contract AndroidKeyAttestationVerifier is IVerifier {
         // Code identity: the OS+app image digest for the pinned path; the app
         // signing-cert hash for the OEM-rooted path.
         codeId = expectedVerifiedBootHash == bytes32(0) ? kd.appCertSha256 : kd.verifiedBootHash;
-        return (codeId, kd.leafPubkey, p.challenge);
+        // Production: userData = challenge only. Testnet: also commit the true,
+        // possibly-downgraded security posture so the member record is explicit.
+        userData = testnetMode
+            ? abi.encode(p.challenge, kd.verifiedBootHash, kd.appCertSha256, kd.deviceLocked, kd.verifiedBootState)
+            : p.challenge;
+        return (codeId, kd.leafPubkey, userData);
     }
 
     /// @dev Stubbed. See top-level comment.

@@ -34,7 +34,7 @@ contract AndroidKeyAttestationVerifierTest is Test {
         bytes32[] memory roots = new bytes32[](2);
         roots[0] = PIXEL6_ROOT_FP;
         roots[1] = APPLIANCE_ROOT_FP;
-        verifier = new AndroidKeyAttestationVerifier(roots);
+        verifier = new AndroidKeyAttestationVerifier(roots, false);
     }
 
     function _buildProof(string memory challenge) internal returns (bytes memory) {
@@ -83,7 +83,7 @@ contract AndroidKeyAttestationVerifierTest is Test {
         // Deploy a fresh verifier with NO roots.
         bytes32[] memory none = new bytes32[](0);
         AndroidKeyAttestationVerifier emptyVerifier =
-            new AndroidKeyAttestationVerifier(none);
+            new AndroidKeyAttestationVerifier(none, false);
 
         vm.expectRevert(
             abi.encodeWithSelector(
