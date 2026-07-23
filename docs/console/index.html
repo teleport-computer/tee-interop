@@ -53,6 +53,16 @@ each job is checkable on Base Sepolia.</p>
   </div>
 </div>
 
+<div class="panel">
+  <h3>Recompute it yourself — the Pixel image is reproducible</h3>
+  <small>The allowlisted <span class="mono">verifiedBootHash</span> is not a black box: rebake the
+  image from stock GrapheneOS + the published APK (<span class="mono">repro/build_image.sh</span>)
+  and the hash falls out. Across 15 independent rebuilds:</small>
+  <div class="out">blocks changed vs stock : 2,911 / 367,688  (0.79% — the APK + hashtree)
+identical bytes         : 99.21%
+independent rebuilds    : 15 / 15 reproduce the same boot hash</div>
+</div>
+
 <h2>2 · Issue an instruction — TaskBoard on Base Sepolia</h2>
 <div class="panel">
   <input id="payload" type="text" placeholder="payload, e.g. 'notarize: meeting minutes v3 hash 1a2b…'">
