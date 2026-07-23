@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Attested edge nodes — operator console</title>
+<style>
+:root{--bg:#fff;--panel:#f7f8fa;--border:#e3e6ea;--text:#1b1f24;--dim:#5b626b;--accent:#0a7d3f;--accent-bg:#e8f5ec;--bad:#b42318;--bad-bg:#fdecea;--blue:#175cd3}
+*{box-sizing:border-box}
+body{margin:0 auto;max-width:1060px;padding:32px 20px;background:var(--bg);color:var(--text);
+  font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+h1{font-size:23px;margin:0 0 6px;font-weight:680}
+.sub{color:var(--dim);margin:0 0 24px;font-size:16px}
+h2{font-size:12px;margin:28px 0 10px;color:var(--dim);text-transform:uppercase;letter-spacing:.07em;font-weight:680}
+h3{font-size:15px;margin:0 0 4px}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:14px}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:840px){.cols{grid-template-columns:1fr}}
+button{font:inherit;font-weight:600;background:var(--accent);color:#fff;border:none;border-radius:7px;padding:9px 16px;cursor:pointer}
+button.alt{background:var(--blue)}
+button.small{padding:4px 10px;font-size:13px}
+button:disabled{opacity:.5;cursor:default}
+.out{font-family:ui-monospace,Menlo,monospace;white-space:pre-wrap;background:#fff;border:1px solid var(--border);border-radius:8px;padding:13px;margin-top:12px;font-size:12.5px;min-height:20px;line-height:1.55;word-break:break-all}
+.ok{color:var(--accent);font-weight:600}.badc{color:var(--bad);font-weight:600}
+.mono{font-family:ui-monospace,Menlo,monospace;font-size:.92em}
+input[type=text]{width:100%;font:inherit;border:1px solid var(--border);border-radius:8px;padding:10px}
+details{margin-top:8px}summary{cursor:pointer;color:var(--dim);font-size:13px}
+small{color:var(--dim)}
+table.tasks{width:100%;border-collapse:collapse;font-size:13.5px}
+table.tasks td,table.tasks th{border-bottom:1px solid var(--border);padding:6px 8px;text-align:left;vertical-align:top}
+</style>
+</head>
+<body>
+<h1>Attested edge nodes — operator console</h1>
+<p class="sub">One laptop, two devices, two silicon vendors. Each attestation is decoded live and
+each job is checkable on Base Sepolia.</p>
+
+<h2>1 · Inspect the attestation claims</h2>
+<div class="cols">
+  <div class="panel">
+    <h3>Pixel 6a — Titan M2 (StrongBox)</h3>
+    <small>X.509 certificate chain to Google's published root; claims live in the
+    key-attestation extension of the leaf.</small><br>
+    <button id="pxbtn" style="margin-top:10px">Attest now</button>
+    <div id="pxout" class="out"></div>
+  </div>
+  <div class="panel">
+    <h3>SiMG301 — Secure Vault SE</h3>
+    <small>COSE_Sign1 (ES256) PSA attestation token; the SE measures the secure-booted app
+    into the software-components claim.</small><br>
+    <button id="slbtn" style="margin-top:10px">Attest now</button>
+    <div id="slout" class="out"></div>
+  </div>
+</div>
+
+<h2>2 · Issue an instruction — TaskBoard on Base Sepolia</h2>
+<div class="panel">
+  <input id="payload" type="text" placeholder="payload, e.g. 'notarize: meeting minutes v3 hash 1a2b…'">
+  <div style="margin-top:10px;display:flex;gap:10px">
+    <button id="postpx">Post → Pixel</button>
+    <button id="postsl" class="alt">Post → SiLabs</button>
+    <button id="refresh" class="small" style="background:#666">Refresh</button>
+  </div>
+  <div id="postout" class="out" style="display:none"></div>
+  <table class="tasks" style="margin-top:14px">
+    <thead><tr><th>#</th><th>payload</th><th>assignee</th><th>status</th><th></th></tr></thead>
+    <tbody id="tasks"></tbody>
+  </table>
+  <div id="taskout" class="out" style="display:none"></div>
+</div>
+
+<script type="module">
+import { ethers } from "https://esm.sh/ethers@6.13.0";
+
+const PIXEL_VERIFIER = "0x78c8c36EbAC7E2c46aF788558141d050Fb823bE8";
+const SILABS_VERIFIER = "0x857A6E8810E30e63f5B544180E2F5a139d50351b";
+const provider = new ethers.JsonRpcProvider("https://sepolia.base.org");
+const pixelVerifier = new ethers.Contract(PIXEL_VERIFIER, [
+  "function verifyAllowlisted(bytes) view returns (bytes32 codeId, bytes pubkey, bytes userData)",
+  "error RootNotAllowed(bytes32 sha256Fingerprint)",
+  "error BootHashNotAllowed(bytes32 verifiedBootHash)",
+  "error VerifiedBootStateRejected(uint8 state)",
+  "error DeviceNotLocked()",
+  "error AppCertNotAllowed(bytes32 certSha256)",
+], provider);
+const silabsVerifier = new ethers.Contract(SILABS_VERIFIER, [
+  "function verify(bytes) view returns (bytes32 codeId, bytes pubkey, bytes userData)",
+  "error RootNotAllowed(bytes32 fingerprint)",
+  "error DevModeNotAccepted()",
+  "error InvalidSignature()",
+], provider);
+
+const $ = id => document.getElementById(id);
+const j = r => r.json();
+const post = (p, b) => fetch(p, { method: "POST", body: JSON.stringify(b || {}) }).then(j);
+const esc = s => String(s).replace(/</g, "&lt;");
+
+$("pxbtn").onclick = async () => {
+  const out = $("pxout"); $("pxbtn").disabled = true;
+  out.innerHTML = "fresh nonce → phone (Titan M2 certifies a key over it)…";
+  try {
+    const r = await post("/api/pixel/attest");
+    if (r.error) { out.innerHTML += `\n<span class="badc">${esc(r.error)}</span>`; return; }
+    const e = r.ext;
+    out.innerHTML =
+      `format: X.509 chain, ${r.chain.length} certs\n` +
+      r.chain.map((c, i) => `  [${i}] ${esc(c.subject)}\n      sig ${c.sigAlg}`).join("\n") +
+      `\n\nkey-attestation extension (leaf):\n` +
+      `  challenge          = ${e.challenge}\n` +
+      `  attest sec level   = <b>${e.attestSecLevel}</b>\n` +
+      `  verifiedBootState  = <b>${e.verifiedBootState}</b>   deviceLocked = <b>${e.deviceLocked}</b>\n` +
+      `  verifiedBootHash   = ${e.verifiedBootHash}\n` +
+      `  os patch level     = ${e.osPatchLevel}\n` +
+      `  app cert sha256    = ${e.appCertSha256}\n` +
+      `<details><summary>raw PEM chain</summary>${esc(r.pem)}</details>` +
+      `\ncalling verifyAllowlisted(proof) on Base Sepolia…`;
+    try {
+      const [codeId] = await pixelVerifier.verifyAllowlisted(r.proof);
+      out.innerHTML += `\n<span class="ok">✔ ACCEPTED on-chain</span>  codeId (bootHash) = ${codeId}`;
+    } catch (err) {
+      const reason = (err.revert && err.revert.name) || err.shortMessage || err.message;
+      out.innerHTML += `\n<span class="badc">✘ REJECTED</span>  ${esc(reason)}`;
+    }
+  } finally { $("pxbtn").disabled = false; }
+};
+
+$("slbtn").onclick = async () => {
+  const out = $("slout"); $("slbtn").disabled = true;
+  out.innerHTML = "random nonce → board over serial (SE signs a PSA IAT)…";
+  try {
+    const r = await post("/api/silabs/attest");
+    if (r.error) { out.innerHTML += `\n<span class="badc">${esc(r.error)}</span>`; return; }
+    const claims = Object.entries(r.claims).map(([k, v]) =>
+      `  ${k}\n      ${typeof v === "object" ? esc(JSON.stringify(v)) : esc(v)}`).join("\n");
+    out.innerHTML =
+      `format: COSE_Sign1, ES256, ${r.token_hex.length / 2} bytes\n` +
+      `COSE sig vs SE device cert: <span class="ok">valid</span>\n\nclaims:\n${claims}\n` +
+      `\nlive measurement (${r.measurementName}) = ${r.measurement}\n` +
+      `<details><summary>raw CBOR token</summary>${r.token_hex}</details>` +
+      `\ncalling SilabsVerifier.verify(proof) on Base Sepolia (RIP-7212 P256)…`;
+    try {
+      const [codeId] = await silabsVerifier.verify(r.proof);
+      out.innerHTML += `\n<span class="ok">✔ signature + root verified on-chain</span>  codeId (app hash) = ${codeId}`;
+    } catch (err) {
+      const reason = (err.revert && err.revert.name) || err.shortMessage || err.message;
+      out.innerHTML += `\n<span class="badc">✘ REJECTED</span>  ${esc(reason)}`;
+    }
+  } finally { $("slbtn").disabled = false; }
+};
+
+async function refreshTasks() {
+  const tasks = await fetch("/api/task/list").then(j);
+  $("tasks").innerHTML = tasks.slice().reverse().map(t =>
+    `<tr><td>${t.id}</td><td class="mono">${esc(t.payload)}</td><td>${t.assignee}</td>` +
+    `<td>${t.done ? '<span class="ok">done</span>' : "open"}</td>` +
+    `<td>${t.done
+        ? `<button class="small" data-verify="${t.id}">Verify</button>`
+        : `<button class="small alt" data-run="${t.id}">Run on device</button>`}</td></tr>`).join("");
+  for (const b of $("tasks").querySelectorAll("[data-run]")) b.onclick = () => runTask(b.dataset.run);
+  for (const b of $("tasks").querySelectorAll("[data-verify]")) b.onclick = () => verifyTask(b.dataset.verify);
+}
+
+async function postTask(device) {
+  const p = $("payload").value.trim();
+  if (!p) return;
+  const out = $("postout"); out.style.display = "block";
+  out.innerHTML = `post("${esc(p)}") → ${device} …`;
+  const r = await post("/api/task/post", { device, payload: p });
+  out.innerHTML += r.error ? `\n<span class="badc">${esc(r.error)}</span>`
+                           : `\nposted, tx ${r.tx}`;
+  refreshTasks();
+}
+$("postpx").onclick = () => postTask("pixel");
+$("postsl").onclick = () => postTask("silabs");
+$("refresh").onclick = refreshTasks;
+
+async function runTask(id) {
+  const out = $("taskout"); out.style.display = "block";
+  out.innerHTML = `task ${id}: handing payload to the device…`;
+  const r = await post("/api/task/run", { id });
+  if (r.error) { out.innerHTML += `\n<span class="badc">${esc(r.error)}</span>`; return; }
+  out.innerHTML += `\n  device      = ${r.device} (${r.signed_with})` +
+    (r.measurement ? `\n  measurement = ${r.measurement} (${r.measurementName})` : "") +
+    `\n  submit tx   = ${r.tx}`;
+  refreshTasks();
+}
+
+async function verifyTask(id) {
+  const out = $("taskout"); out.style.display = "block";
+  out.innerHTML = `task ${id}: pulling result from chain, verifying…`;
+  const r = await post("/api/task/verify", { id });
+  if (r.error) { out.innerHTML += `\n<span class="badc">${esc(r.error)}</span>`; return; }
+  out.innerHTML += `\n` + Object.entries(r).map(([k, v]) => {
+    const good = v === true, bad = v === false && k !== "done";
+    return `  ${k} = ${good ? '<span class="ok">' : bad ? '<span class="badc">' : ""}${esc(v)}${good || bad ? "</span>" : ""}`;
+  }).join("\n");
+}
+
+refreshTasks();
+</script>
+</body>
+</html>
