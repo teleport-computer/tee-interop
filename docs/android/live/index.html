@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Live: attested notary demo</title>
+<style>
+:root{--bg:#fff;--panel:#f7f8fa;--border:#e3e6ea;--text:#1b1f24;--dim:#5b626b;--accent:#0a7d3f;--accent-bg:#e8f5ec;--bad:#b42318;--bad-bg:#fdecea}
+*{box-sizing:border-box}
+body{margin:0 auto;max-width:760px;padding:32px 20px;background:var(--bg);color:var(--text);
+  font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif}
+h1{font-size:23px;margin:0 0 6px;font-weight:680}
+.sub{color:var(--dim);margin:0 0 24px;font-size:16px}
+h2{font-size:12px;margin:28px 0 10px;color:var(--dim);text-transform:uppercase;letter-spacing:.07em;font-weight:680}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:14px}
+button{font:inherit;font-weight:600;background:var(--accent);color:#fff;border:none;border-radius:7px;padding:11px 18px;cursor:pointer}
+button:disabled{opacity:.5;cursor:default}
+.out{font-family:ui-monospace,Menlo,monospace;white-space:pre-wrap;background:#fff;border:1px solid var(--border);border-radius:8px;padding:13px;margin-top:12px;font-size:12.5px;min-height:20px;line-height:1.55;word-break:break-all}
+.ok{color:var(--accent);font-weight:600}.badc{color:var(--bad);font-weight:600}
+.mono{font-family:ui-monospace,Menlo,monospace;font-size:.92em}
+input[type=text],textarea{width:100%;font:inherit;border:1px solid var(--border);border-radius:8px;padding:10px}
+.entry{border-bottom:1px solid var(--border);padding:8px 0}.entry:last-child{border-bottom:none}
+.fp{font-size:17px;letter-spacing:.06em}
+small{color:var(--dim)}
+</style>
+</head>
+<body>
+<h1>Live attested notary</h1>
+<p class="sub">Fresh-challenge attestation from the phone on the table, verified against
+<span class="mono">verifyAllowlisted</span> on Base Sepolia.</p>
+
+<h2>1 · Device</h2>
+<div class="panel">
+<div id="devstate" class="out">connecting to phone…</div>
+</div>
+
+<h2>2 · Attest the running image — fresh challenge</h2>
+<div class="panel">
+<p>Generates a random nonce, has the Titan M2 sign an attestation over it, then verifies the
+proof on-chain. Green only if the signed <span class="mono">verifiedBootHash</span> is on the
+contract's allowlist.</p>
+<button id="attestbtn">Attest now</button>
+<div id="attestout" class="out"></div>
+</div>
+
+<h2>3 · The notary key</h2>
+<div class="panel">
+<p>The persistent StrongBox signing key, attested under the same image. Its fingerprint should
+match the QR card on the phone screen.</p>
+<button id="nodebtn">Verify node key on-chain</button>
+<div id="nodeout" class="out"></div>
+</div>
+
+<h2>4 · Signed record</h2>
+<div class="panel">
+<p>Everything the notary signed, each signature verified in this browser against the attested
+node key.</p>
+<textarea id="notetext" placeholder="statement to notarize from here"></textarea>
+<button id="notebtn" style="margin-top:8px">Notarize</button>
+<div id="logout" class="out"></div>
+</div>
+
+<script type="module">
+import { ethers } from "https://esm.sh/ethers@6.13.0";
+
+const PHONE = "http://127.0.0.1:8151", BRIDGE = "/api";
+const VERIFIER = "0x78c8c36EbAC7E2c46aF788558141d050Fb823bE8";
+const ABI = [
+  "function verifyAllowlisted(bytes) view returns (bytes32 codeId, bytes pubkey, bytes userData)",
+  "error RootNotAllowed(bytes32 sha256Fingerprint)",
+  "error BootHashNotAllowed(bytes32 verifiedBootHash)",
+  "error VerifiedBootStateRejected(uint8 state)",
+  "error DeviceNotLocked()",
+  "error AppCertNotAllowed(bytes32 certSha256)",
+];
+const provider = new ethers.JsonRpcProvider("https://sepolia.base.org");
+const verifier = new ethers.Contract(VERIFIER, ABI, provider);
+
+const $ = id => document.getElementById(id);
+const hexBytes = h => Uint8Array.from(h.replace(/^0x/, "").match(/../g).map(x => parseInt(x, 16)));
+const j = r => r.json();
+
+async function fp8(spkiHex) {
+  const d = new Uint8Array(await crypto.subtle.digest("SHA-256", hexBytes(spkiHex)));
+  return [...d.slice(0, 8)].map(b => b.toString(16).padStart(2, "0")).join(" ");
+}
+
+function derToRaw(derHex) {
+  const d = hexBytes(derHex);
+  let i = 2;                                   // SEQUENCE, len
+  const int = () => {
+    i++;                                       // INTEGER tag
+    let len = d[i++];
+    let v = d.slice(i, i + len); i += len;
+    while (v.length > 32) v = v.slice(1);      // strip sign byte
+    const out = new Uint8Array(32); out.set(v, 32 - v.length);
+    return out;
+  };
+  const r = int(), s = int();
+  const raw = new Uint8Array(64); raw.set(r); raw.set(s, 32);
+  return raw;
+}
+
+let nodeKeyHex = null;
+
+async function refreshState() {
+  const st = await fetch(PHONE + "/state").then(j);
+  nodeKeyHex = st.provisioned ? st.pubkey_spki_hex : null;
+  $("devstate").innerHTML =
+    `device        = ${st.device}\n` +
+    `apk sha256    = ${st.apk_hash}\n` +
+    `node key      = ${st.provisioned ? `<span class="ok">provisioned (StrongBox)</span>  fp ${await fp8(st.pubkey_spki_hex)}` : "not provisioned"}`;
+  refreshLog();
+}
+
+async function onchain(proofHex, out) {
+  out.innerHTML += "\ncalling verifyAllowlisted(proof) on Base Sepolia…";
+  try {
+    const [codeId, pubkey, userData] = await verifier.verifyAllowlisted(proofHex);
+    out.innerHTML += `\n<span class="ok">✔ ACCEPTED</span>\n  codeId (verifiedBootHash) = ${codeId}\n  attested pubkey fp        = ${await fp8(pubkey.slice(2))}`;
+    return { codeId, pubkey, userData };
+  } catch (e) {
+    const reason = (e.revert && e.revert.name) || e.shortMessage || e.message;
+    out.innerHTML += `\n<span class="badc">✘ REJECTED</span>  ${reason}`;
+    if (String(reason).includes("BootHashNotAllowed"))
+      out.innerHTML += `\n  this device's OS image is not on the allowlist — genuine hardware, wrong code`;
+    return null;
+  }
+}
+
+$("attestbtn").onclick = async () => {
+  const out = $("attestout");
+  $("attestbtn").disabled = true;
+  out.innerHTML = "fresh nonce → phone /attest (Titan M2 signs)…";
+  try {
+    const r = await fetch(BRIDGE + "/attest", { method: "POST" }).then(j);
+    if (r.error) { out.innerHTML += `\n<span class="badc">${r.error}</span>`; return; }
+    out.innerHTML += `\n  nonce          = ${r.nonce}\n  apk sha256     = ${r.apk_hash}\n  cert challenge = sha256(nonce ∥ apk_hash) = ${r.cert_challenge}`;
+    await onchain(r.proof, out);
+  } finally { $("attestbtn").disabled = false; }
+};
+
+$("nodebtn").onclick = async () => {
+  const out = $("nodeout");
+  $("nodebtn").disabled = true;
+  out.innerHTML = "phone /provision (attestation for the persistent StrongBox key)…";
+  try {
+    const r = await fetch(BRIDGE + "/provision_proof", { method: "POST" }).then(j);
+    if (r.error) { out.innerHTML += `\n<span class="badc">${r.error}</span>`; return; }
+    const res = await onchain(r.proof, out);
+    if (res && nodeKeyHex) {
+      const match = res.pubkey.slice(2).toLowerCase() === nodeKeyHex.toLowerCase();
+      out.innerHTML += match
+        ? `\n<span class="ok">✔ attested pubkey matches the key on the phone screen</span>`
+        : `\n<span class="badc">✘ attested pubkey differs from phone /state key</span>`;
+    }
+  } finally { $("nodebtn").disabled = false; }
+};
+
+$("notebtn").onclick = async () => {
+  const t = $("notetext").value.trim();
+  if (!t) return;
+  await fetch(PHONE + "/note", { method: "POST", body: JSON.stringify({ text: t }) });
+  $("notetext").value = "";
+  refreshLog();
+};
+
+async function refreshLog() {
+  const entries = await fetch(PHONE + "/log").then(j);
+  if (!entries.length) { $("logout").textContent = "empty"; return; }
+  if (!nodeKeyHex) { $("logout").textContent = "node key not provisioned"; return; }
+  const key = await crypto.subtle.importKey("spki", hexBytes(nodeKeyHex),
+    { name: "ECDSA", namedCurve: "P-256" }, false, ["verify"]);
+  const rows = [];
+  for (const e of entries.slice().reverse()) {
+    const ok = await crypto.subtle.verify({ name: "ECDSA", hash: "SHA-256" }, key,
+      derToRaw(e.sig_der_hex), new TextEncoder().encode(e.text));
+    rows.push(`${ok ? '<span class="ok">✔</span>' : '<span class="badc">✘</span>'} ${new Date(e.ts).toLocaleString()}  ${e.text.replace(/</g, "&lt;")}`);
+  }
+  $("logout").innerHTML = rows.join("\n");
+}
+
+refreshState();
+setInterval(refreshLog, 3000);
+</script>
+</body>
+</html>
