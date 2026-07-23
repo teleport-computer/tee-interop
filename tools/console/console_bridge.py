@@ -68,7 +68,7 @@ def send_tx(fn, *args):
     a = Account.from_key(os.environ["PRIVATE_KEY"])
     tx = fn(*args).build_transaction({
         "from": a.address, "nonce": w3.eth.get_transaction_count(a.address),
-        "chainId": w3.eth.chain_id, "gas": 3_000_000,
+        "chainId": w3.eth.chain_id,
         "maxFeePerGas": w3.to_wei(0.02, "gwei"), "maxPriorityFeePerGas": w3.to_wei(0.01, "gwei")})
     h = w3.eth.send_raw_transaction(a.sign_transaction(tx).raw_transaction)
     return w3.eth.wait_for_transaction_receipt(h, timeout=180)
@@ -164,6 +164,56 @@ def silabs_attest(nonce: bytes):
     }
 
 
+# ── pixel loader: JS workload → signed transcript ────────────────────────────
+
+LOADER = Path("/home/amiller/projects/dstack/edge-tee/pixel-attest/loader")
+LOADER_REMOTE = "/sdcard/Android/data/com.edgetee.loader/files"
+
+
+def loader_run(js: str, input_str: str, nonce_hex: str) -> dict:
+    SCRATCH.mkdir(exist_ok=True)
+    (SCRATCH / "workload.js").write_text(js)
+    adb = lambda *a: subprocess.run(["adb", *a], check=True, capture_output=True, text=True)
+    adb("shell", f"mkdir -p {LOADER_REMOTE}")
+    adb("shell", f"rm -f {LOADER_REMOTE}/workload.pem {LOADER_REMOTE}/workload.json {LOADER_REMOTE}/workload.err")
+    adb("push", str(SCRATCH / "workload.js"), f"{LOADER_REMOTE}/workload.js")
+    adb("shell", "am start -W -n com.edgetee.loader/.LoaderActivity "
+        f"-e input '{input_str}' -e nonce {nonce_hex} -e strongbox true")
+    import time
+    for _ in range(30):
+        time.sleep(1)
+        err = subprocess.run(["adb", "shell", f"cat {LOADER_REMOTE}/workload.err"],
+                             capture_output=True, text=True)
+        if err.returncode == 0 and err.stdout.strip():
+            raise RuntimeError(f"loader: {err.stdout.strip()}")
+        rec = subprocess.run(["adb", "shell", f"cat {LOADER_REMOTE}/workload.json"],
+                             capture_output=True, text=True)
+        if rec.returncode == 0 and rec.stdout.strip():
+            break
+    else:
+        raise RuntimeError("loader timed out")
+    record = json.loads(rec.stdout)
+    record["chain_pem"] = adb("shell", f"cat {LOADER_REMOTE}/workload.pem").stdout
+    return record
+
+
+def loader_verify(payload: bytes, sig: bytes) -> dict:
+    job = json.loads(payload)
+    record = json.loads(sig)
+    SCRATCH.mkdir(exist_ok=True)
+    (SCRATCH / "v_workload.js").write_text(job["js"])
+    (SCRATCH / "v_record.json").write_text(json.dumps(record))
+    (SCRATCH / "v_chain.pem").write_text(record["chain_pem"])
+    r = subprocess.run(
+        ["python3", str(LOADER / "verifier/verify_workload.py"), str(SCRATCH / "v_chain.pem"),
+         str(SCRATCH / "v_workload.js"), "--nonce", record["nonce"],
+         "--record", str(SCRATCH / "v_record.json")],
+        capture_output=True, text=True)
+    return {"report": r.stdout + r.stderr, "workloadId": record["workloadId"],
+            "output": record["output"],
+            "input_matches_task": json.loads(record["input"]) == job.get("input", {})}
+
+
 # ── taskboard ─────────────────────────────────────────────────────────────────
 
 def task_list():
@@ -182,7 +232,19 @@ def task_run(task_id: int):
     if done:
         raise RuntimeError("task already done")
     who = NAMES.get(bytes(assignee))
-    if who == "pixel":
+    job = None
+    try:
+        job = json.loads(payload)
+    except ValueError:
+        pass
+    if who == "pixel" and isinstance(job, dict) and "js" in job:
+        nonce = hashlib.sha256(payload).hexdigest()
+        record = loader_run(job["js"], json.dumps(job.get("input", {})), nonce)
+        result = json.dumps(record).encode()
+        detail = {"device": "pixel-loader",
+                  "signed_with": "workload-bound StrongBox key (transcript sig)",
+                  "workloadId": record["workloadId"], "output": record["output"]}
+    elif who == "pixel":
         r = phone("/sign", {"message_hex": "0x" + payload.hex()})
         result = bytes.fromhex(r["signature_der_hex"])
         detail = {"device": "pixel", "signed_with": "StrongBox node key (ECDSA-P256 DER)"}
@@ -206,7 +268,10 @@ def task_verify(task_id: int):
         return {"done": False}
     who = NAMES.get(bytes(assignee))
     out = {"done": True, "device": who, "payload": payload.decode("utf-8", "replace")}
-    if who == "pixel":
+    if who == "pixel" and bytes(sig)[:1] == b"{":
+        out["device"] = "pixel-loader"
+        out.update(loader_verify(bytes(payload), bytes(sig)))
+    elif who == "pixel":
         from cryptography.hazmat.primitives.serialization import load_der_public_key
         from cryptography.hazmat.primitives.asymmetric import ec
         from cryptography.hazmat.primitives import hashes

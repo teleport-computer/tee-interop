@@ -61,6 +61,12 @@ each job is checkable on Base Sepolia.</p>
     <button id="postsl" class="alt">Post → SiLabs</button>
     <button id="refresh" class="small" style="background:#666">Refresh</button>
   </div>
+  <details style="margin-top:12px"><summary>the instruction is code — JS workload for the measured loader</summary>
+    <textarea id="jscode" rows="5" style="width:100%;font-family:ui-monospace,Menlo,monospace;font-size:12.5px;margin-top:8px;border:1px solid var(--border);border-radius:8px;padding:10px">const inp = JSON.parse(readInput());
+print(JSON.stringify({sum: inp.nums.reduce((a,b)=>a+b,0), count: inp.nums.length}));</textarea>
+    <input id="jsinput" type="text" style="margin-top:8px" value='{"nums":[1,2,3,4]}' placeholder="input JSON">
+    <button id="postjs" class="alt" style="margin-top:8px">Post code → Pixel loader</button>
+  </details>
   <div id="postout" class="out" style="display:none"></div>
   <table class="tasks" style="margin-top:14px">
     <thead><tr><th>#</th><th>payload</th><th>assignee</th><th>status</th><th></th></tr></thead>
@@ -172,6 +178,14 @@ async function postTask(device) {
 }
 $("postpx").onclick = () => postTask("pixel");
 $("postsl").onclick = () => postTask("silabs");
+$("postjs").onclick = async () => {
+  const payload = JSON.stringify({ js: $("jscode").value, input: JSON.parse($("jsinput").value) });
+  const out = $("postout"); out.style.display = "block";
+  out.innerHTML = `post(JS workload, ${payload.length} bytes) → pixel loader …`;
+  const r = await post("/api/task/post", { device: "pixel", payload });
+  out.innerHTML += r.error ? `\n<span class="badc">${esc(r.error)}</span>` : `\nposted, tx ${r.tx}`;
+  refreshTasks();
+};
 $("refresh").onclick = refreshTasks;
 
 async function runTask(id) {
