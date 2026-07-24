@@ -89,7 +89,7 @@ print(JSON.stringify({sum: inp.nums.reduce((a,b)=>a+b,0), count: inp.nums.length
 <div class="panel">
   <p>The whole auction rule set is <span class="mono">auction.js</span> (identity =
   its sha256). Bids are ECIES-encrypted to the workload's attested StrongBox key and
-  posted on-chain; the phone resolves in the measured loader and publishes <b>only the
+  posted on-chain (contract <span id="aucontract" class="mono"></span>); the phone resolves in the measured loader and publishes <b>only the
   winner index and the clearing (second) price</b>. All bid amounts stay sealed forever
   — on-chain and in the signed transcript.</p>
   <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
@@ -125,6 +125,10 @@ const silabsVerifier = new ethers.Contract(SILABS_VERIFIER, [
 
 const $ = id => document.getElementById(id);
 const j = r => r.json();
+const SCAN = "https://sepolia.basescan.org";
+const txlink = h => { const x = String(h).replace(/^0x/, "");
+  return `<a href="${SCAN}/tx/0x${x}" target="_blank">${x.slice(0, 16)}…↗</a>`; };
+const addrlink = (a, label) => `<a href="${SCAN}/address/${a}" target="_blank">${label || a}↗</a>`;
 const post = (p, b) => fetch(p, { method: "POST", body: JSON.stringify(b || {}) }).then(j);
 const esc = s => String(s).replace(/</g, "&lt;");
 
@@ -200,7 +204,7 @@ async function postTask(device) {
   out.innerHTML = `post("${esc(p)}") → ${device} …`;
   const r = await post("/api/task/post", { device, payload: p });
   out.innerHTML += r.error ? `\n<span class="badc">${esc(r.error)}</span>`
-                           : `\nposted, tx ${r.tx}`;
+                           : `\nposted, tx ${txlink(r.tx)}`;
   refreshTasks();
 }
 $("postpx").onclick = () => postTask("pixel");
@@ -210,7 +214,7 @@ $("postjs").onclick = async () => {
   const out = $("postout"); out.style.display = "block";
   out.innerHTML = `post(JS workload, ${payload.length} bytes) → pixel loader …`;
   const r = await post("/api/task/post", { device: "pixel", payload });
-  out.innerHTML += r.error ? `\n<span class="badc">${esc(r.error)}</span>` : `\nposted, tx ${r.tx}`;
+  out.innerHTML += r.error ? `\n<span class="badc">${esc(r.error)}</span>` : `\nposted, tx ${txlink(r.tx)}`;
   refreshTasks();
 };
 $("refresh").onclick = refreshTasks;
@@ -222,7 +226,7 @@ async function runTask(id) {
   if (r.error) { out.innerHTML += `\n<span class="badc">${esc(r.error)}</span>`; return; }
   out.innerHTML += `\n  device      = ${r.device} (${r.signed_with})` +
     (r.measurement ? `\n  measurement = ${r.measurement} (${r.measurementName})` : "") +
-    `\n  submit tx   = ${r.tx}`;
+    `\n  submit tx   = ${txlink(r.tx)}`;
   refreshTasks();
 }
 
@@ -237,6 +241,9 @@ async function verifyTask(id) {
   }).join("\n");
 }
 
+const AUCTION_ADDR = "0x1cdb41cd3F1e71d5B8a3440ab912ECD5414E0782";
+$("aucontract").innerHTML = addrlink(AUCTION_ADDR, AUCTION_ADDR.slice(0, 10) + "…");
+
 let auctionId = null;
 const au = $("auout");
 const auLog = s => { au.innerHTML += s + "\n"; };
@@ -246,7 +253,7 @@ $("aucreate").onclick = async () => {
   const r = await post("/api/auction/create");
   if (r.error) { auLog(`<span class="badc">${esc(r.error)}</span>`); return; }
   auctionId = r.auction_id;
-  auLog(`auction #${r.auction_id} created  tx ${r.tx}`);
+  auLog(`auction #${r.auction_id} created  tx ${txlink(r.tx)}`);
   auLog(`  workloadId (sha256 of auction.js) = ${r.workloadId}`);
   auLog(`  attested bid-encryption key       = ${r.announce_key_spki.slice(0, 40)}…`);
   auLog(`  rules: ${esc(r.rules)}`);
@@ -259,7 +266,7 @@ $("aubid").onclick = async () => {
     auLog(`bidder ${i}: encrypting bid to the workload key, posting on-chain…`);
     const r = await post("/api/auction/bid", { id: auctionId, amount: a });
     auLog(r.error ? `<span class="badc">${esc(r.error)}</span>`
-                  : `  sealed  ct ${r.ciphertext.slice(0, 32)}…  tx ${r.tx.slice(0, 18)}…`);
+                  : `  sealed  ct ${r.ciphertext.slice(0, 32)}…  tx ${txlink(r.tx)}`);
   }
   auLog("bid amounts now exist ONLY as ciphertext on Base Sepolia.");
 };
@@ -270,7 +277,7 @@ $("auresolve").onclick = async () => {
   const n = $("aubids").value.split(",").filter(s => s.trim()).length;
   const r = await post("/api/auction/resolve", { id: auctionId, n });
   if (r.error) { auLog(`<span class="badc">${esc(r.error)}</span>`); return; }
-  auLog(`<span class="ok">winner = bidder ${r.winner}, pays ${r.price} (second price)</span>  tx ${r.tx}`);
+  auLog(`<span class="ok">winner = bidder ${r.winner}, pays ${r.price} (second price)</span>  tx ${txlink(r.tx)}`);
   auLog(`  (${r.n_bids} bids; no bid value, including the winner's, was revealed)`);
 };
 

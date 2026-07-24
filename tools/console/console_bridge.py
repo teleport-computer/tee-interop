@@ -174,6 +174,7 @@ def loader_run(js: str, input_str: str, nonce_hex: str) -> dict:
     SCRATCH.mkdir(exist_ok=True)
     (SCRATCH / "workload.js").write_text(js)
     adb = lambda *a: subprocess.run(["adb", *a], check=True, capture_output=True, text=True)
+    adb("shell", "am force-stop com.edgetee.loader")
     adb("shell", f"mkdir -p {LOADER_REMOTE}")
     adb("shell", f"rm -f {LOADER_REMOTE}/workload.pem {LOADER_REMOTE}/workload.json {LOADER_REMOTE}/workload.err")
     adb("push", str(SCRATCH / "workload.js"), f"{LOADER_REMOTE}/workload.js")
