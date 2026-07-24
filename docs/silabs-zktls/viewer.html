@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SiMG301 zkTLS — live run viewer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { font: 15px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif; color: #1a1f24; background: #fafaf8; padding: 2rem 1rem 4rem; }
+  main { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin-bottom: .3rem; }
+  h2 { font-size: 1.15rem; margin: 2.2rem 0 .8rem; border-bottom: 2px solid #e3e1da; padding-bottom: .3rem; }
+  p.sub { color: #5c6570; margin-bottom: 1.2rem; }
+  code, .mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: .82em; }
+  .hex { word-break: break-all; color: #35506b; }
+  a { color: #35506b; }
+  .note { background: #fdf6e3; border: 1px solid #ecd9a0; border-radius: 6px; padding: .7rem .9rem; margin: 1rem 0; font-size: .92rem; }
+  .banner { border-radius: 8px; padding: .8rem 1rem; margin: 1rem 0; font-size: .92rem; font-weight: 500; }
+  .banner.dev { background: #fbeee0; border: 1px solid #e6b27a; color: #7a3d05; }
+  .badge { display: inline-block; font-size: .72rem; font-weight: 700; padding: .12rem .55rem; border-radius: 99px; vertical-align: middle; margin-left: .5rem; }
+  .badge.sample { background: #b3560c; color: #fff; }
+  .badge.live { background: #2e7d32; color: #fff; }
+  .ok { color: #2e7d32; font-weight: 600; }
+  .warn { color: #b3560c; font-weight: 600; }
+  pre { background: #fff; border: 1px solid #cfd6dc; border-radius: 7px; padding: .7rem; overflow-x: auto; font-size: .78rem; line-height: 1.45; white-space: pre-wrap; word-break: break-word; }
+  .kv { border-collapse: collapse; width: 100%; font-size: .85rem; }
+  .kv td { padding: .3rem .6rem .3rem 0; vertical-align: top; border-bottom: 1px solid #eceae5; }
+  .kv td:first-child { white-space: nowrap; color: #5c6570; }
+  .claims { border-collapse: collapse; width: 100%; background: #fff; border: 1px solid #cfd6dc; border-radius: 7px; overflow: hidden; }
+  .claims td { padding: .35rem .6rem; border-bottom: 1px solid #eceae5; vertical-align: top; font-size: .82rem; }
+  .claims tr:last-child td { border-bottom: none; }
+  .claims .k { white-space: nowrap; color: #6a7480; }
+  .cert { background: #fff; border: 1px solid #cfd6dc; border-radius: 7px; padding: .55rem .7rem; margin: .45rem 0; font-size: .84rem; }
+  .cert b { font-size: .87rem; }
+  .cert .fp { color: #6a7480; font-size: .75rem; word-break: break-all; }
+  .cert .chk { display: block; margin-top: .25rem; font-size: .8rem; }
+  .arrow { text-align: center; color: #8a939c; font-size: .8rem; margin: -2px 0; }
+  .recipe td { padding: .25rem .6rem; font-size: .8rem; border-bottom: 1px solid #eceae5; }
+  .recipe td:first-child { color: #6a7480; white-space: nowrap; }
+  .err { background: #fdecec; border: 1px solid #e0a3a3; color: #8a1f1f; border-radius: 8px; padding: 1.2rem; font-size: .95rem; }
+  .foot { margin-top: 2.5rem; color: #8a939c; font-size: .8rem; }
+</style>
+</head>
+<body>
+<main id="app"><p class="sub">Loading run…</p></main>
+<script src="runs/latest.js" onerror="window.__ZKTLS_LOAD_ERR=true"></script>
+<script>
+const el = document.getElementById("app");
+const esc = s => String(s).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+const b64dec = b => { try { return decodeURIComponent(escape(atob(b))); } catch (e) { return atob(b); } };
+const flag = f => f === "dev" ? '<span class="warn">dev</span>' : f === "measurement" ? '<span class="ok">measurement</span>' : "";
+
+function fail(msg) {
+  el.innerHTML = '<h1>SiMG301 zkTLS — run viewer</h1>' +
+    '<div class="err"><b>No run to display.</b><br>' + esc(msg) +
+    '<br><br>Expected <code>runs/latest.js</code> (JSONP: <code>window.ZKTLS_RUN = {…}</code>), written by ' +
+    '<code>relay.py fetch</code> alongside <code>latest.json</code>.</div>';
+}
+
+if (window.__ZKTLS_LOAD_ERR || typeof window.ZKTLS_RUN === "undefined")
+  fail("runs/latest.js is missing or did not define window.ZKTLS_RUN.");
+else render(window.ZKTLS_RUN);
+
+function render(r) {
+  const v = r.verification, lc = r.lifecycle;
+  const chk = b => b ? '<span class="ok">✓</span>' : '<span class="warn">✗</span>';
+  const sampleBadge = r.sample ? '<span class="badge sample">SAMPLE</span>' : '<span class="badge live">LIVE</span>';
+
+  const chainHtml = r.chain.map((c, i) =>
+    (i ? '<div class="arrow">▼ signs</div>' : '') +
+    '<div class="cert"><b>' + esc(c.name) + '</b>' +
+      (c.detail ? '<br><span class="mono">' + esc(c.detail) + '</span>' : '') +
+      (c.fp ? '<br><span class="fp">SHA-256 ' + esc(c.fp) + '</span>' : '') +
+      '<span class="chk">' + chk(c.status === "ok") + ' ' + esc(c.check) + '</span></div>'
+  ).join("");
+
+  const claimsHtml = r.token_claims.map(c =>
+    '<tr><td class="k mono">' + esc(c.key) + '</td><td class="mono">' + esc(c.name) + '</td>' +
+    '<td class="mono hex">' + esc(c.value) + ' ' + flag(c.flag) + '</td></tr>'
+  ).join("");
+
+  const recipeHtml = r.commitment.parts.map(p =>
+    '<tr><td>' + esc(p.label) + '</td><td class="mono">' + esc(p.text) + '</td></tr>'
+  ).join("");
+
+  el.innerHTML =
+    '<h1>SiMG301 zkTLS — live run viewer ' + sampleBadge + '</h1>' +
+    '<p class="sub">Attested-TLS run rendered from <code>runs/latest.js</code>. ' +
+      '<a href="index.html">← concept &amp; dev-vs-production chain</a></p>' +
+
+    (r.sample ? '<div class="note"><b>Sample record.</b> Hand-written from the real board token pulled 2026-07-24 plus a demo httpbin request/response, so the viewer is demonstrable before the <code>zktls_proxy</code> firmware exists. <code>relay.py fetch</code> overwrites this file with a captured run.</div>' : '') +
+
+    '<div class="banner dev">⚠ Lifecycle ' + esc(lc.value) + ' — ' + esc(lc.band) +
+      ' (dev mode). ' + esc(lc.detail) + '</div>' +
+
+    '<h2>Run</h2>' +
+    '<table class="kv">' +
+      '<tr><td>timestamp</td><td class="mono">' + esc(r.ts) + '</td></tr>' +
+      '<tr><td>demo</td><td>' + esc(r.demo) + '</td></tr>' +
+      '<tr><td>host</td><td class="mono">' + esc(r.host) + ':' + esc(r.port) + '</td></tr>' +
+    '</table>' +
+
+    '<h2>Request (redacted)</h2>' +
+    '<p class="sub">Key substituted on-chip only; <code>$APIKEY</code> is the literal marker that stays in every off-chip record.</p>' +
+    '<pre>' + esc(r.request_redacted) + '</pre>' +
+
+    '<h2>Response</h2>' +
+    '<pre>' + esc(b64dec(r.response_b64)) + '</pre>' +
+
+    '<h2>Commitment recipe</h2>' +
+    '<p class="sub"><code>' + esc(r.commitment.recipe) + '</code></p>' +
+    '<table class="recipe">' + recipeHtml + '</table>' +
+    '<pre class="hex">commitment = ' + esc(r.commitment.value) + '</pre>' +
+    '<table class="kv">' +
+      '<tr><td>nonce == sha256(commitment)</td><td>' + chk(v.nonce_bound_to_commitment) +
+        (v.nonce_bound_to_commitment ? '' : ' <span class="warn">not bound</span> — ' + esc(v.nonce_bound_note)) +
+      '</td></tr></table>' +
+
+    '<h2>Decoded IAT claims</h2>' +
+    '<table class="claims">' + claimsHtml + '</table>' +
+    '<details><summary style="cursor:pointer;font-size:.85rem;color:#35506b;margin:.6rem 0">full token hex</summary>' +
+      '<pre class="hex">' + esc(r.token_hex) + '</pre></details>' +
+
+    '<h2>Attestation chain</h2>' +
+    chainHtml +
+
+    '<h2>Verification summary</h2>' +
+    '<table class="kv">' +
+      '<tr><td>COSE ES256 signature</td><td>' + chk(v.cose_sig_valid) + ' valid vs SE device cert</td></tr>' +
+      '<tr><td>certificate chain</td><td>' + chk(v.chain_ok) + ' every link to SiLabs Device Root CA</td></tr>' +
+      '<tr><td>transcript nonce bound</td><td>' + chk(v.nonce_bound_to_commitment) +
+        (v.nonce_bound_to_commitment ? '' : ' <span class="warn">production-firmware delta</span>') + '</td></tr>' +
+      '<tr><td>lifecycle</td><td>' + esc(lc.value) + ' <span class="warn">dev mode — token confesses it</span></td></tr>' +
+    '</table>' +
+
+    '<div class="note"><b>Honest framing:</b> attested TLS (a TEE oracle), not zero-knowledge. The trust reduction is "chipmaker + measured firmware", not "the host operator". The 32-byte nonce field carries a hash commitment to the transcript, not the transcript.</div>' +
+
+    '<p class="foot">Rendered client-side from runs/latest.js · no external dependencies · light theme matches index.html</p>';
+}
+</script>
+</body>
+</html>

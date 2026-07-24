@@ -1,0 +1,56 @@
+{
+  "ts": "2026-07-24T14:32:17.300367+00:00",
+  "sample": false,
+  "host": "api.anthropic.com",
+  "port": 443,
+  "demo": "key-substitution ($APIKEY on-chip)",
+  "request_redacted": "POST /v1/messages HTTP/1.1\r\nHost: api.anthropic.com\r\nx-api-key: $APIKEY\r\nanthropic-version: 2023-06-01\r\ncontent-type: application/json\r\ncontent-length: 193\r\nConnection: close\r\n\r\n{\"model\":\"claude-haiku-4-5-20251001\",\"max_tokens\":40,\"messages\":[{\"role\":\"user\",\"content\":\"You are running inside a SiLabs SiMG301 attested-TLS demo. Say hi to Andrew in one short sentence.\"}]}",
+  "response_b64": "SFRUUC8xLjEgMjAwIE9LDQpEYXRlOiBGcmksIDI0IEp1bCAyMDI2IDE0OjMyOjE2IEdNVA0KQ29udGVudC1UeXBlOiBhcHBsaWNhdGlvbi9qc29uDQpUcmFuc2Zlci1FbmNvZGluZzogY2h1bmtlZA0KQ29ubmVjdGlvbjogY2xvc2UNCmFudGhyb3BpYy1yYXRlbGltaXQtaW5wdXQtdG9rZW5zLWxpbWl0OiAxMDAwMDAwMA0KYW50aHJvcGljLXJhdGVsaW1pdC1pbnB1dC10b2tlbnMtcmVtYWluaW5nOiAxMDAwMDAwMA0KYW50aHJvcGljLXJhdGVsaW1pdC1pbnB1dC10b2tlbnMtcmVzZXQ6IDIwMjYtMDctMjRUMTQ6MzI6MTZaDQphbnRocm9waWMtcmF0ZWxpbWl0LW91dHB1dC10b2tlbnMtbGltaXQ6IDIwMDAwMDANCmFudGhyb3BpYy1yYXRlbGltaXQtb3V0cHV0LXRva2Vucy1yZW1haW5pbmc6IDIwMDAwMDANCmFudGhyb3BpYy1yYXRlbGltaXQtb3V0cHV0LXRva2Vucy1yZXNldDogMjAyNi0wNy0yNFQxNDozMjoxNloNCmFudGhyb3BpYy1yYXRlbGltaXQtcmVxdWVzdHMtbGltaXQ6IDEwMDAwDQphbnRocm9waWMtcmF0ZWxpbWl0LXJlcXVlc3RzLXJlbWFpbmluZzogOTk5OQ0KYW50aHJvcGljLXJhdGVsaW1pdC1yZXF1ZXN0cy1yZXNldDogMjAyNi0wNy0yNFQxNDozMjoxNloNCmFudGhyb3BpYy1yYXRlbGltaXQtdG9rZW5zLWxpbWl0OiAxMjAwMDAwMA0KYW50aHJvcGljLXJhdGVsaW1pdC10b2tlbnMtcmVtYWluaW5nOiAxMjAwMDAwMA0KYW50aHJvcGljLXJhdGVsaW1pdC10b2tlbnMtcmVzZXQ6IDIwMjYtMDctMjRUMTQ6MzI6MTZaDQpyZXF1ZXN0LWlkOiByZXFfMDExQ2RNM2FxdWs1VmNTZ2QzV0g3cExBDQpzdHJpY3QtdHJhbnNwb3J0LXNlY3VyaXR5OiBtYXgtYWdlPTMxNTM2MDAwOyBpbmNsdWRlU3ViRG9tYWluczsgcHJlbG9hZA0KYW50aHJvcGljLW9yZ2FuaXphdGlvbi1pZDogMWEzYjZiYjAtNGYyMS00MDc2LWE2MjgtMjU2YTVkOTc1MGE3DQp0cmFjZXJlc3BvbnNlOiAwMC0xMzU3NzUwZWVhMTE0YjBjZjJiM2M1MjI0YzcwODk2Ni04YzdmMDNjODBkZmU0OTQyLTAxDQpTZXJ2ZXI6IGNsb3VkZmxhcmUNCkNvbnRlbnQtU2VjdXJpdHktUG9saWN5OiBkZWZhdWx0LXNyYyAnbm9uZSc7IGZyYW1lLWFuY2VzdG9ycyAnbm9uZScNCnZhcnk6IEFjY2VwdC1FbmNvZGluZw0KY2YtY2FjaGUtc3RhdHVzOiBEWU5BTUlDDQpYLVJvYm90cy1UYWc6IG5vbmUNCkNGLVJBWTogYTIwM2EyMWFhYTcwZTM1MS1FV1INCg0KMWQ3DQp7Im1vZGVsIjoiY2xhdWRlLWhhaWt1LTQtNS0yMDI1MTAwMSIsImlkIjoibXNnXzAxMUNkTTNhczd2SHVBQml2UnlIM2VNRyIsInR5cGUiOiJtZXNzYWdlIiwicm9sZSI6ImFzc2lzdGFudCIsImNvbnRlbnQiOlt7InR5cGUiOiJ0ZXh0IiwidGV4dCI6IkhpIEFuZHJldyEg8J+RiyJ9XSwic3RvcF9yZWFzb24iOiJlbmRfdHVybiIsInN0b3Bfc2VxdWVuY2UiOm51bGwsInN0b3BfZGV0YWlscyI6bnVsbCwidXNhZ2UiOnsiaW5wdXRfdG9rZW5zIjozOCwiY2FjaGVfY3JlYXRpb25faW5wdXRfdG9rZW5zIjowLCJjYWNoZV9yZWFkX2lucHV0X3Rva2VucyI6MCwiY2FjaGVfY3JlYXRpb24iOnsiZXBoZW1lcmFsXzVtX2lucHV0X3Rva2VucyI6MCwiZXBoZW1lcmFsXzFoX2lucHV0X3Rva2VucyI6MH0sIm91dHB1dF90b2tlbnMiOjksInNlcnZpY2VfdGllciI6InN0YW5kYXJkIiwiaW5mZXJlbmNlX2dlbyI6Im5vdF9hdmFpbGFibGUifX0NCjANCg0K",
+  "commitment": "44f158d7865ba808e0ff5ddbcf2b6567c02be7cf11ff7dea6af2d4762c82facb",
+  "token_hex": "d28443a10126a0590131a83a000124ff582044f158d7865ba808e0ff5ddbcf2b6567c02be7cf11ff7dea6af2d4762c82facb3a000124f7715053415f494f545f50524f46494c455f313a000125005821011b0a964a111277e3c706e1880b59592ea3bab0ad29e4a26d38cc9d05ad5d3f223a000124f8013a000124f91940013a000124fa58203000020000000000010000004d473330000000000000000000000000000000003a000124fb5820e5c1bbd1514aced523d03f6d3c067474b8fb475615a9643c3969490bd29f6dc53a000124fd82a3016450526f5404683330303330333032025820830385b853d384f713df1bcbf1c5ec7daafce7d4fa783b7220410e3606c42fe6a3016441526f5404683030303030303031025820a6ce1261b75ff6d09fe557f69fa727e405a4d95abe255509ea31d33ef7a07ec758407b9cfcd71a681a64235bb5c8d602c61175c6289652800a0a38ac8789b30d61c393267824f710be7c4c08ad3a773acd89fc2270de29cdd69ae882c8235940086d",
+  "verification": {
+    "nonce": "44f158d7865ba808e0ff5ddbcf2b6567c02be7cf11ff7dea6af2d4762c82facb",
+    "commitment": {
+      "pass": true,
+      "recompute": "44f158d7865ba808e0ff5ddbcf2b6567c02be7cf11ff7dea6af2d4762c82facb",
+      "note": "zktls-v1 structured recompute"
+    },
+    "cose_sig": {
+      "pass": true
+    },
+    "chain": {
+      "pass": true,
+      "links": [
+        [
+          "O=Silicon Labs Inc.,C=US,CN=EUI:20A716FFFEB31DAE S:SE1 ID:SE",
+          true
+        ],
+        [
+          "C=US,O=Silicon Labs Inc.,CN=Batch 1237800",
+          true
+        ],
+        [
+          "C=US,O=Silicon Labs Inc.,CN=Factory",
+          true
+        ],
+        [
+          "C=US,O=Silicon Labs Inc.,CN=Device Root CA",
+          true
+        ]
+      ]
+    },
+    "arot": {
+      "pass": true,
+      "token": "a6ce1261b75ff6d09fe557f69fa727e405a4d95abe255509ea31d33ef7a07ec7",
+      "expected": "a6ce1261b75ff6d09fe557f69fa727e405a4d95abe255509ea31d33ef7a07ec7",
+      "source": "commander image"
+    },
+    "lifecycle": {
+      "value": "0x4001",
+      "secured": false,
+      "dev_mode": true,
+      "pass": true,
+      "note": "NON_PSA_ROT_DEBUG (dev band)"
+    }
+  }
+}

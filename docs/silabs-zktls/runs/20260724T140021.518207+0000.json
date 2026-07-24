@@ -1,0 +1,53 @@
+{
+  "ts": "2026-07-24T14:00:21.518207+00:00",
+  "host": "httpbin.org",
+  "request_redacted": "GET /bearer HTTP/1.1\r\nHost: httpbin.org\r\nAuthorization: Bearer $APIKEY\r\nUser-Agent: zktls-simg301\r\nAccept: */*\r\nConnection: close\r\n\r\n",
+  "response_b64": "SFRUUC8xLjEgNTAzIFNlcnZpY2UgVGVtcG9yYXJpbHkgVW5hdmFpbGFibGUNClNlcnZlcjogYXdzZWxiLzIuMA0KRGF0ZTogRnJpLCAyNCBKdWwgMjAyNiAxNDowMDoyMSBHTVQNCkNvbnRlbnQtVHlwZTogdGV4dC9odG1sDQpDb250ZW50LUxlbmd0aDogMTYyDQpDb25uZWN0aW9uOiBjbG9zZQ0KDQo8aHRtbD4NCjxoZWFkPjx0aXRsZT41MDMgU2VydmljZSBUZW1wb3JhcmlseSBVbmF2YWlsYWJsZTwvdGl0bGU+PC9oZWFkPg0KPGJvZHk+DQo8Y2VudGVyPjxoMT41MDMgU2VydmljZSBUZW1wb3JhcmlseSBVbmF2YWlsYWJsZTwvaDE+PC9jZW50ZXI+DQo8L2JvZHk+DQo8L2h0bWw+DQo=",
+  "commitment": "c23e4c5f52c45f16f6c720eff0f9ea9baa740103038e3ac0fa2e4a22ec42646e",
+  "token_hex": "d28443a10126a0590131a83a000124ff5820c23e4c5f52c45f16f6c720eff0f9ea9baa740103038e3ac0fa2e4a22ec42646e3a000124f7715053415f494f545f50524f46494c455f313a000125005821011b0a964a111277e3c706e1880b59592ea3bab0ad29e4a26d38cc9d05ad5d3f223a000124f8013a000124f91940013a000124fa58203000020000000000010000004d473330000000000000000000000000000000003a000124fb582069404fdbeabc113c9eb304221024c2a62d4b0453b0d09cfd4b0198e17c6f60633a000124fd82a3016450526f5404683330303330333032025820830385b853d384f713df1bcbf1c5ec7daafce7d4fa783b7220410e3606c42fe6a3016441526f540468303030303030303102582069b0ed7152c031d2ca7e8244b9cd2d3dfc1c60574381daebf769ef695edc32e65840fc44b47eac51cda5f7830299a215ac6205445e0f06c0c12e0f30e7c6ea4be0cfeea875c058579740ff4b5eeca3a9a960e603d8a935f2cc5643c6cd0815401ea4",
+  "verification": {
+    "nonce": "c23e4c5f52c45f16f6c720eff0f9ea9baa740103038e3ac0fa2e4a22ec42646e",
+    "commitment": {
+      "pass": true,
+      "recompute": "c23e4c5f52c45f16f6c720eff0f9ea9baa740103038e3ac0fa2e4a22ec42646e",
+      "note": "zktls-v1 structured recompute"
+    },
+    "cose_sig": {
+      "pass": true
+    },
+    "chain": {
+      "pass": true,
+      "links": [
+        [
+          "O=Silicon Labs Inc.,C=US,CN=EUI:20A716FFFEB31DAE S:SE1 ID:SE",
+          true
+        ],
+        [
+          "C=US,O=Silicon Labs Inc.,CN=Batch 1237800",
+          true
+        ],
+        [
+          "C=US,O=Silicon Labs Inc.,CN=Factory",
+          true
+        ],
+        [
+          "C=US,O=Silicon Labs Inc.,CN=Device Root CA",
+          true
+        ]
+      ]
+    },
+    "arot": {
+      "pass": true,
+      "token": "69b0ed7152c031d2ca7e8244b9cd2d3dfc1c60574381daebf769ef695edc32e6",
+      "expected": "69b0ed7152c031d2ca7e8244b9cd2d3dfc1c60574381daebf769ef695edc32e6",
+      "source": "commander image"
+    },
+    "lifecycle": {
+      "value": "0x4001",
+      "secured": false,
+      "dev_mode": true,
+      "pass": true,
+      "note": "NON_PSA_ROT_DEBUG (dev band)"
+    }
+  }
+}

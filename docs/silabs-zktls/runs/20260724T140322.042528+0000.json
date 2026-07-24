@@ -1,0 +1,53 @@
+{
+  "ts": "2026-07-24T14:03:22.042528+00:00",
+  "host": "httpbin.org",
+  "request_redacted": "GET /headers HTTP/1.1\r\nHost: httpbin.org\r\nAuthorization: Bearer $APIKEY\r\nUser-Agent: zktls-simg301\r\nAccept: */*\r\nConnection: close\r\n\r\n",
+  "response_b64": "SFRUUC8xLjEgMjAwIE9LDQpEYXRlOiBGcmksIDI0IEp1bCAyMDI2IDE0OjAzOjIxIEdNVA0KQ29udGVudC1UeXBlOiBhcHBsaWNhdGlvbi9qc29uDQpDb250ZW50LUxlbmd0aDogMjQzDQpDb25uZWN0aW9uOiBjbG9zZQ0KU2VydmVyOiBndW5pY29ybi8xOS45LjANCkFjY2Vzcy1Db250cm9sLUFsbG93LU9yaWdpbjogKg0KQWNjZXNzLUNvbnRyb2wtQWxsb3ctQ3JlZGVudGlhbHM6IHRydWUNCg0KewogICJoZWFkZXJzIjogewogICAgIkFjY2VwdCI6ICIqLyoiLCAKICAgICJBdXRob3JpemF0aW9uIjogIkJlYXJlciBEVU1NWUtFWS16a3Rscy1zdWJzdC1wcm9vZi0zZjlhMmI3YyIsIAogICAgIkhvc3QiOiAiaHR0cGJpbi5vcmciLCAKICAgICJVc2VyLUFnZW50IjogInprdGxzLXNpbWczMDEiLCAKICAgICJYLUFtem4tVHJhY2UtSWQiOiAiUm9vdD0xLTZhNjM3MGE5LTE2YzEyNjhkMWYzYjBhYzE2YzZmMzAyNyIKICB9Cn0K",
+  "commitment": "7d93e17707fca01cc242dc5b46a2a6c02221ea06524107b673051127310ef68b",
+  "token_hex": "d28443a10126a0590131a83a000124ff58207d93e17707fca01cc242dc5b46a2a6c02221ea06524107b673051127310ef68b3a000124f7715053415f494f545f50524f46494c455f313a000125005821011b0a964a111277e3c706e1880b59592ea3bab0ad29e4a26d38cc9d05ad5d3f223a000124f8013a000124f91940013a000124fa58203000020000000000010000004d473330000000000000000000000000000000003a000124fb58201f93cded6bbc3b10b486855334866e1b3bea1c0f7876b4bb4d5db70919d3ced63a000124fd82a3016450526f5404683330303330333032025820830385b853d384f713df1bcbf1c5ec7daafce7d4fa783b7220410e3606c42fe6a3016441526f540468303030303030303102582069b0ed7152c031d2ca7e8244b9cd2d3dfc1c60574381daebf769ef695edc32e65840c0ce1daea9606cc3e46da98616c2d4b745ebb71f8042278c55cf68ae22195fd38cf6eacdb765c4c6d6510c4759529e9372c278b4f4e3d5793dc65de23ed23b0d",
+  "verification": {
+    "nonce": "7d93e17707fca01cc242dc5b46a2a6c02221ea06524107b673051127310ef68b",
+    "commitment": {
+      "pass": true,
+      "recompute": "7d93e17707fca01cc242dc5b46a2a6c02221ea06524107b673051127310ef68b",
+      "note": "zktls-v1 structured recompute"
+    },
+    "cose_sig": {
+      "pass": true
+    },
+    "chain": {
+      "pass": true,
+      "links": [
+        [
+          "O=Silicon Labs Inc.,C=US,CN=EUI:20A716FFFEB31DAE S:SE1 ID:SE",
+          true
+        ],
+        [
+          "C=US,O=Silicon Labs Inc.,CN=Batch 1237800",
+          true
+        ],
+        [
+          "C=US,O=Silicon Labs Inc.,CN=Factory",
+          true
+        ],
+        [
+          "C=US,O=Silicon Labs Inc.,CN=Device Root CA",
+          true
+        ]
+      ]
+    },
+    "arot": {
+      "pass": true,
+      "token": "69b0ed7152c031d2ca7e8244b9cd2d3dfc1c60574381daebf769ef695edc32e6",
+      "expected": "69b0ed7152c031d2ca7e8244b9cd2d3dfc1c60574381daebf769ef695edc32e6",
+      "source": "commander image"
+    },
+    "lifecycle": {
+      "value": "0x4001",
+      "secured": false,
+      "dev_mode": true,
+      "pass": true,
+      "note": "NON_PSA_ROT_DEBUG (dev band)"
+    }
+  }
+}

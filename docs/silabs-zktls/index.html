@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SiMG301 attested-TLS key proxy — attestation chain, dev vs production</title>
+<style>
+  * { box-sizing: border-box; margin: 0; }
+  body { font: 15px/1.5 -apple-system, "Segoe UI", Roboto, sans-serif; color: #1a1f24; background: #fafaf8; padding: 2rem 1rem 4rem; }
+  main { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 1.5rem; margin-bottom: .3rem; }
+  h2 { font-size: 1.15rem; margin: 2.2rem 0 .8rem; border-bottom: 2px solid #e3e1da; padding-bottom: .3rem; }
+  h3 { font-size: .95rem; margin-bottom: .5rem; }
+  p.sub { color: #5c6570; margin-bottom: 1.2rem; }
+  code, .mono { font-family: "SF Mono", Menlo, Consolas, monospace; font-size: .82em; }
+  .hex { word-break: break-all; color: #35506b; }
+  .note { background: #fdf6e3; border: 1px solid #ecd9a0; border-radius: 6px; padding: .7rem .9rem; margin: 1rem 0; font-size: .92rem; }
+
+  /* architecture diagram */
+  .arch { display: flex; align-items: stretch; gap: .5rem; margin: 1.2rem 0; flex-wrap: wrap; }
+  .arch .box { flex: 1 1 150px; border: 1.5px solid #9aa4ae; border-radius: 8px; padding: .6rem .7rem; background: #fff; font-size: .85rem; text-align: center; }
+  .arch .box b { display: block; font-size: .9rem; margin-bottom: .2rem; }
+  .arch .link { align-self: center; text-align: center; font-size: .72rem; color: #5c6570; flex: 0 0 auto; padding: 0 .1rem; }
+  .arch .tee { border-color: #2e7d32; border-width: 2.5px; background: #f2f9f2; }
+
+  /* two-column chains */
+  .chains { display: grid; grid-template-columns: 1fr 1fr; gap: 1.4rem; }
+  @media (max-width: 800px) { .chains { grid-template-columns: 1fr; } }
+  .chain { border-radius: 10px; padding: 1rem; }
+  .chain.dev  { background: #f2f9f2; border: 2px solid #2e7d32; }
+  .chain.prod { background: #f4f4f2; border: 2px dashed #9aa4ae; }
+  .chain > h3 { text-align: center; }
+  .chain .tag { display: inline-block; font-size: .72rem; font-weight: 600; padding: .1rem .5rem; border-radius: 99px; margin-left: .4rem; vertical-align: middle; }
+  .tag.live { background: #2e7d32; color: #fff; }
+  .tag.todo { background: #9aa4ae; color: #fff; }
+  .cert { background: #fff; border: 1px solid #cfd6dc; border-radius: 7px; padding: .55rem .7rem; margin: .45rem 0; font-size: .84rem; }
+  .cert b { font-size: .87rem; }
+  .cert .fp { color: #6a7480; font-size: .75rem; word-break: break-all; }
+  .prod .cert.same { opacity: .55; }
+  .prod .cert.ghost { border-style: dashed; background: #fbfbfa; color: #6a7480; }
+  .arrow { text-align: center; color: #8a939c; font-size: .8rem; line-height: 1; margin: -2px 0; }
+  .ok   { color: #2e7d32; font-weight: 600; }
+  .warn { color: #b3560c; font-weight: 600; }
+  .claims td { padding: .15rem .5rem .15rem 0; vertical-align: top; font-size: .8rem; }
+  .claims { border-collapse: collapse; width: 100%; }
+  details { margin: .6rem 0; }
+  summary { cursor: pointer; font-size: .85rem; color: #35506b; }
+  pre { background: #fff; border: 1px solid #cfd6dc; border-radius: 7px; padding: .7rem; overflow-x: auto; font-size: .78rem; line-height: 1.45; }
+  .status { width: 100%; border-collapse: collapse; font-size: .85rem; background: #fff; border-radius: 7px; overflow: hidden; border: 1px solid #cfd6dc; }
+  .status td, .status th { padding: .4rem .7rem; border-bottom: 1px solid #eceae5; text-align: left; }
+  .status tr:last-child td { border-bottom: none; }
+  .foot { margin-top: 2.5rem; color: #8a939c; font-size: .8rem; }
+  a { color: #35506b; }
+</style>
+</head>
+<body>
+<main>
+<h1>SiMG301 attested-TLS API-key proxy</h1>
+<p class="sub">Secure Vault High attestation chain — the <b>dev-mode chain that works today</b> (all values below are real, pulled live from the board on 2026-07-24) next to the <b>production chain we haven't burned yet</b>, so it's clear exactly what each one proves.</p>
+<div class="note"><b>Live run viewer →</b> <a href="viewer.html">viewer.html</a> renders a single captured run (request, response, commitment recipe, decoded IAT claims, per-link chain checks) from <code>runs/latest.js</code>, which <code>relay.py fetch</code> writes each run.</div>
+
+<h2>1 · The demo concept</h2>
+<p>The MCU is the TLS endpoint; the host is just an untrusted byte pipe. The Anthropic API key lives only on the chip. Every response comes back with a PSA attestation token whose <b>nonce&nbsp;=&nbsp;SHA-256 of the TLS transcript commitment</b>, so a third party can check: <i>this exact response came from api.anthropic.com, fetched by this exact measured firmware, on a genuine SiLabs die — and the key never left the chip.</i></p>
+<div class="arch">
+  <div class="box"><b>Verifier</b>checks IAT chain → ca.silabs.com root; ARoT = expected fw hash; nonce = sha256(transcript)</div>
+  <div class="link">response +<br>IAT token<br>⟵</div>
+  <div class="box"><b>Host (untrusted)</b>opens TCP to api.anthropic.com:443, relays raw bytes over VCOM serial. Sees only TLS ciphertext.</div>
+  <div class="link">TCP bytes<br>⟷ serial</div>
+  <div class="box tee"><b>SiMG301 (TEE)</b>mbedTLS 1.3 client · pinned CA · API key sealed in Secure Vault · signs IAT over transcript hash</div>
+  <div class="link">TLS 1.3<br>(terminates<br>on-chip)</div>
+  <div class="box"><b>api.anthropic.com</b>ordinary HTTPS server; sees a normal TLS client</div>
+</div>
+<div class="note"><b>Honest framing:</b> this is <i>attested TLS</i> (a TEE oracle, à la Town Crier) — not zero-knowledge. There is no ZK proof; the trust reduction is "chipmaker + measured firmware" instead of "the host operator". The IAT's 32-byte nonce field carries a hash commitment to the transcript, not the transcript itself.</div>
+
+<h2>2 · The attestation chain — dev mode (real) vs production (not yet burned)</h2>
+<div class="chains">
+
+  <div class="chain dev">
+    <h3>DEV MODE <span class="tag live">LIVE · verified 2026-07-24</span></h3>
+    <div class="cert"><b>SiLabs Device Root CA</b> (P-256, 2018→2118)<br>
+      published: <a href="https://ca.silabs.com/Device-Root-CA-chain.pem">ca.silabs.com/Device-Root-CA-chain.pem</a><br>
+      <span class="fp">SHA-256 DB:F5:F0:B3:B3:FD:ED:07:3C:5F:19:28:95:48:E6:26:AD:CB:1F:8F:53:46:B9:33:51:C2:D5:77:5F:A7:21:53</span></div>
+    <div class="arrow">▼ signs</div>
+    <div class="cert"><b>Factory CA</b><br><span class="fp">SHA-256 06:E2:B9:0E:26:A9:6F:75:8A:5A:6A:09:3C:90:0D:41:DD:53:36:CB:2E:D9:D9:07:B7:75:DE:C3:45:0C:78:7B</span></div>
+    <div class="arrow">▼ signs</div>
+    <div class="cert"><b>Batch 1237800 CA</b> (issued 2025-05-22, in-fab)<br><span class="fp">SHA-256 9C:08:4F:FC:C6:C3:39:DE:A6:59:15:E9:3B:20:D5:D8:F9:B6:37:42:7C:CA:CD:C2:6D:38:41:69:B3:F1:67:FC</span></div>
+    <div class="arrow">▼ signs</div>
+    <div class="cert"><b>SE device cert</b> — <span class="mono">EUI:20A716FFFEB31DAE</span><br>
+      P-256 attestation key generated inside the HSE at manufacture; never leaves the die.<br>
+      <span class="fp">SHA-256 04:8C:39:BF:B6:06:F7:A4:C4:AB:A5:1C:FA:60:B4:9B:34:F0:D3:6E:92:A4:94:5E:78:9E:14:95:2C:54:75:9C</span></div>
+    <div class="arrow">▼ ES256-signs each</div>
+    <div class="cert"><b>PSA IAT</b> (COSE_Sign1, 381 B, pulled fresh over VCOM)
+      <table class="claims">
+        <tr><td class="mono">-75008</td><td>nonce = <span class="mono hex">1adfd6d973180ab9…07e76e13</span> = sha256(demo transcript) <span class="ok">✓ match</span></td></tr>
+        <tr><td class="mono">-75006</td><td><b>PRoT</b> (SE fw 3.3.2) <span class="mono hex">830385b8…06c42fe6</span><br><b>ARoT = app SHA-256</b> <span class="mono hex">d8e8a122913914c72d13c30bb1ade7deb24fc64ed003c11acf4fd8823a2736f7</span> — the code measurement</td></tr>
+        <tr><td class="mono">-75002</td><td>lifecycle = <span class="mono">0x4001</span> → <span class="warn">NON_PSA_ROT_DEBUG band ⚠</span> (PSA spec: SECURED = 0x3xxx). <b>The token itself confesses dev mode.</b></td></tr>
+        <tr><td class="mono">-75009</td><td>UEID <span class="mono hex">011b0a96…5d3f22</span></td></tr>
+      </table>
+      <details><summary>full token hex + offline verification transcript</summary>
+<pre class="hex">d28443a10126a0590131a83a000124ff58201adfd6d973180ab9a26297e787e1e85a512d1d9677e91ad1310cf23707e76e133a000124f7715053415f494f545f50524f46494c455f313a000125005821011b0a964a111277e3c706e1880b59592ea3bab0ad29e4a26d38cc9d05ad5d3f223a000124f8013a000124f91940013a000124fa58203000020000000000010000004d473330000000000000000000000000000000003a000124fb5820c4f81eb2f4483503943e175348ada4b4f10ef36dc5f15532f29dddebb0535beb3a000124fd82a3016450526f5404683330303330333032025820830385b853d384f713df1bcbf1c5ec7daafce7d4fa783b7220410e3606c42fe6a3016441526f5404683030303030303031025820d8e8a122913914c72d13c30bb1ade7deb24fc64ed003c11acf4fd8823a2736f75840b6213c6e9ee5eee23d5bceba4b901f35c65c94619739f1b838e28e479a9602d4b792dae2f55a469eb798051de9d4223f1c6373a68cc16c2b05ad80454bc55853</pre>
+<pre>demo transcript preimage (nonce = sha256 of this):
+POST /v1/messages HTTP/1.1\r\nhost: api.anthropic.com\r\n
+[TLS1.3 transcript commitment placeholder, zktls demo 2026-07-24]
+
+COSE ES256 sig valid vs se.pem            : True
+nonce == sha256(transcript)               : True
+chain: SE cert ← Batch 1237800 ← Factory ← Device Root CA : all sigs OK</pre></details>
+    </div>
+    <div class="arrow">▼ verified on-chain</div>
+    <div class="cert"><b>SilabsVerifier</b> (Base Sepolia, RIP-7212 native P-256)<br>
+      <span class="mono hex">0x857A6E8810E30e63f5B544180E2F5a139d50351b</span><br>
+      TEEBridge member <span class="mono">0x4af324d3…</span>, codeId = registered ARoT</div>
+  </div>
+
+  <div class="chain prod">
+    <h3>PRODUCTION <span class="tag todo">NOT YET BURNED</span></h3>
+    <div class="cert same"><b>SiLabs Device Root CA</b> — <i>unchanged.</i> The fab identity chain is already production-grade; it was never the gap.</div>
+    <div class="arrow">▼</div>
+    <div class="cert same"><b>Factory CA</b> — unchanged</div>
+    <div class="arrow">▼</div>
+    <div class="cert same"><b>Batch CA</b> — unchanged</div>
+    <div class="arrow">▼</div>
+    <div class="cert same"><b>SE device cert</b> — unchanged (same die, same key)</div>
+    <div class="arrow">▼</div>
+    <div class="cert ghost"><b>PSA IAT — expected deltas</b>
+      <table class="claims">
+        <tr><td class="mono">-75002</td><td>lifecycle → <span class="mono">0x3xxx SECURED</span> once debug is locked <i>(to be confirmed at burn time — we can't rehearse an irreversible fuse)</i></td></tr>
+        <tr><td class="mono">-75006</td><td>ARoT = SHA-256 of the final TLS-proxy firmware (value TBD — firmware not written yet)</td></tr>
+        <tr><td class="mono">-75008</td><td>nonce = sha256(real TLS transcript commitment), not a placeholder string</td></tr>
+      </table>
+    </div>
+    <div class="arrow">▼</div>
+    <div class="cert ghost"><b>Device config — the irreversible burns</b><br>
+      ▢ Debug lock: <b>Enabled</b> (today: <span class="warn">Disabled</span>)<br>
+      ▢ Device erase: <b>Disabled</b> — permanent, closes the wipe-and-reprovision path (today: <span class="warn">Enabled</span>)<br>
+      ▢ (optional) Secure debug unlock via command key, for audited RMA<br>
+      ✅ Secure boot: already Enabled — sign key burned 2026-06-12<br>
+      ✅ SE attestation identity: already live</div>
+    <div class="arrow">▼</div>
+    <div class="cert ghost"><b>Verifier policy delta</b><br>
+      SilabsVerifier (or a wrapper) additionally requires <span class="mono">lifecycle ∈ 0x3xxx</span>.<br>
+      Today's contract checks signature + chain + ARoT but does <b>not</b> reject dev-lifecycle tokens — a production verifier must.</div>
+  </div>
+</div>
+
+<h2>3 · What each chain actually proves</h2>
+<table class="status">
+  <tr><th>Claim</th><th>Dev mode (today)</th><th>Production</th></tr>
+  <tr><td>Genuine SiLabs die, SE-held key (can't be exfiltrated or emulated)</td><td class="ok">✓</td><td class="ok">✓</td></tr>
+  <tr><td>Secure boot: only firmware signed by our key boots</td><td class="ok">✓ (burned)</td><td class="ok">✓</td></tr>
+  <tr><td>ARoT claim = SHA-256 of the app that actually booted</td><td class="ok">✓</td><td class="ok">✓</td></tr>
+  <tr><td>Attacker <i>with the board</i> can't read the API key</td><td class="warn">✗ — SWD is open: attach a debugger after boot, dump RAM/flash</td><td class="ok">✓ debug locked</td></tr>
+  <tr><td>Attacker with the board can't puppet the measured app at runtime</td><td class="warn">✗ — debugger can hijack execution while ARoT still reads clean</td><td class="ok">✓</td></tr>
+  <tr><td>Attacker can't wipe & reprovision the device as "fresh"</td><td class="warn">✗ — device erase enabled</td><td class="ok">✓ erase disabled</td></tr>
+  <tr><td>Verifier can <i>tell the difference</i> remotely</td><td colspan="2" class="ok">✓ — lifecycle claim 0x4001 vs 0x3xxx is inside the signed token; nothing is hidden</td></tr>
+</table>
+<div class="note">Unlike the Pixel (lock/unlock/reflash at will), the SiMG301's debug lock + erase-disable are one-way fuses — there is no "unlock, iterate, re-lock" loop. So we stay in dev mode for development, and the token honestly advertises that. The production column is exactly two fuse burns plus one verifier policy line away.</div>
+
+<h2>4 · Live device state (commander, 2026-07-24)</h2>
+<pre>SE ROM 5.3 · SE Firmware 3.3.2 · SiMG301M104LIL rev B0 · 4 MB flash / 512 KB SRAM
+Secure boot          : Enabled     ✓ (sign key burned 2026-06-12)
+Sign key installed   : True        ✓
+Debug lock           : Disabled    ⚠ dev mode
+Device erase         : Enabled     ⚠ dev mode
+Secure debug unlock  : Disabled
+Boot status          : 0x20 - OK · Tamper: OK</pre>
+
+<h2>5 · Build plan for the proxy demo</h2>
+<ol style="padding-left:1.4rem; font-size:.92rem;">
+  <li><b>Firmware:</b> extend taskboard-runner — mbedTLS client over a serial-framed TCP socket (host relays), pinned CA for api.anthropic.com, request template with the key inserted on-chip, IAT over sha256(request-sans-key ‖ response).</li>
+  <li><b>Key sealing:</b> Anthropic API key imported once into Secure Vault wrapped storage (never in the host relay or logs).</li>
+  <li><b>Host relay:</b> ~50-line Python: TCP ↔ /dev/ttyACM0 byte pump. Untrusted by construction.</li>
+  <li><b>Verifier:</b> existing offline check + SilabsVerifier on-chain view call; add the lifecycle policy line and show it <i>rejecting</i> today's 0x4001 token when run in "production policy" mode — the two columns above, executable.</li>
+</ol>
+
+<p class="foot">Evidence: edge-tee/silabs-secure-vault/hw/evidence/ · token pulled via attest_nonce.py over VCOM · chain + COSE verified offline (pycose/cryptography) · ca.silabs.com serves browsers only (CDN rejects curl), local root copy fingerprint-matched.</p>
+</main>
+</body>
+</html>
