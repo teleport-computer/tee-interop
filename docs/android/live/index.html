@@ -158,7 +158,9 @@ $("nodebtn").onclick = async () => {
 };
 
 $("notebtn").onclick = async () => {
-  const t = $("notetext").value.trim();
+  // ASCII-only until the on-image APK gets the byte-accurate body parser:
+  // the flashed build reads Content-Length bytes as chars and hangs on UTF-8.
+  const t = $("notetext").value.trim().normalize("NFKD").replace(/[‐-―]/g, "-").replace(/[^\x20-\x7E]/g, "");
   if (!t) return;
   await fetch(PHONE + "/note", { method: "POST", body: JSON.stringify({ text: t }) });
   $("notetext").value = "";
