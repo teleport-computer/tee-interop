@@ -67,7 +67,7 @@ def phone(path, body=None):
 def send_tx(fn, *args):
     a = Account.from_key(os.environ["PRIVATE_KEY"])
     tx = fn(*args).build_transaction({
-        "from": a.address, "nonce": w3.eth.get_transaction_count(a.address),
+        "from": a.address, "nonce": w3.eth.get_transaction_count(a.address, "pending"),
         "chainId": w3.eth.chain_id,
         "maxFeePerGas": w3.to_wei(0.02, "gwei"), "maxPriorityFeePerGas": w3.to_wei(0.01, "gwei")})
     h = w3.eth.send_raw_transaction(a.sign_transaction(tx).raw_transaction)
@@ -214,6 +214,141 @@ def loader_verify(payload: bytes, sig: bytes) -> dict:
             "input_matches_task": json.loads(record["input"]) == job.get("input", {})}
 
 
+# ── sealed-bid auction (payload = auction.js, bids ECIES-sealed on-chain) ─────
+
+AUCTION = "0x1cdb41cd3F1e71d5B8a3440ab912ECD5414E0782"
+AUCTION_JS = LOADER / "workloads/auction/auction.js"
+AUCTION_ABI = json.loads("""[
+ {"inputs":[{"name":"workloadId","type":"bytes32"},{"name":"announceKey","type":"bytes"}],"name":"create","outputs":[{"name":"id","type":"uint256"}],"stateMutability":"nonpayable","type":"function"},
+ {"inputs":[{"name":"id","type":"uint256"},{"name":"ciphertext","type":"bytes"}],"name":"bid","outputs":[{"name":"bidIndex","type":"uint256"}],"stateMutability":"nonpayable","type":"function"},
+ {"inputs":[{"name":"id","type":"uint256"},{"name":"winner","type":"uint256"},{"name":"price","type":"uint256"},{"name":"record","type":"bytes"}],"name":"resolve","outputs":[],"stateMutability":"nonpayable","type":"function"},
+ {"inputs":[{"name":"id","type":"uint256"}],"name":"get","outputs":[{"name":"workloadId","type":"bytes32"},{"name":"announceKey","type":"bytes"},{"name":"nBids","type":"uint256"},{"name":"resolved","type":"bool"},{"name":"winner","type":"uint256"},{"name":"price","type":"uint256"}],"stateMutability":"view","type":"function"},
+ {"inputs":[{"name":"id","type":"uint256"},{"name":"i","type":"uint256"}],"name":"getBid","outputs":[{"name":"","type":"bytes"}],"stateMutability":"view","type":"function"},
+ {"inputs":[{"name":"id","type":"uint256"}],"name":"getRecord","outputs":[{"name":"","type":"bytes"}],"stateMutability":"view","type":"function"},
+ {"inputs":[],"name":"count","outputs":[{"name":"","type":"uint256"}],"stateMutability":"view","type":"function"}
+]""")
+auction_c = w3.eth.contract(address=AUCTION, abi=AUCTION_ABI)
+
+
+def _leaf_spki(chain_pem: str) -> bytes:
+    from cryptography.x509 import load_pem_x509_certificate
+    from cryptography.hazmat.primitives import serialization
+    first = chain_pem.split("-----END CERTIFICATE-----")[0] + "-----END CERTIFICATE-----\n"
+    return load_pem_x509_certificate(first.encode()).public_key().public_bytes(
+        serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo)
+
+
+def _ecies_encrypt(spki: bytes, plaintext: bytes) -> dict:
+    import secrets as pysecrets
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import ec
+    from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+    from cryptography.hazmat.primitives.kdf.hkdf import HKDF
+    from cryptography.hazmat.primitives.serialization import load_der_public_key
+    pub = load_der_public_key(spki)
+    eph = ec.generate_private_key(ec.SECP256R1())
+    key = HKDF(algorithm=hashes.SHA256(), length=32, salt=None,
+               info=b"tee-interop/auction/v1").derive(eph.exchange(ec.ECDH(), pub))
+    nonce = pysecrets.token_bytes(12)
+    return {"eph_spki_hex": eph.public_key().public_bytes(
+                serialization.Encoding.DER, serialization.PublicFormat.SubjectPublicKeyInfo).hex(),
+            "nonce_hex": nonce.hex(),
+            "ct_hex": AESGCM(key).encrypt(nonce, plaintext, None).hex()}
+
+
+AUCTION_NONCE = "07"   # cert challenge = sha256(js)||nonce, fixed at key mint;
+                       # the auction key is long-lived by design (bids span runs)
+
+
+def auction_create():
+    js = AUCTION_JS.read_text()
+    record = loader_run(js, '{"phase":"announce"}', AUCTION_NONCE)
+    spki = _leaf_spki(record["chain_pem"])
+    wid = bytes.fromhex(record["workloadId"])
+    rcpt = send_tx(auction_c.functions.create, wid, spki)
+    aid = int(rcpt.logs[0].topics[1].hex(), 16)
+    return {"auction_id": aid, "workloadId": record["workloadId"],
+            "announce_key_spki": spki.hex(), "tx": rcpt.transactionHash.hex(),
+            "rules": json.loads(record["output"]).get("rules", "")}
+
+
+def _retry_call(f, ok=lambda v: True, tries=12, delay=3):
+    """Base Sepolia's public RPC is load-balanced over nodes with uneven lag;
+    a read right after a mined tx can hit a stale node. Retry until the state
+    is visible; raise if it never converges."""
+    import time
+    last = None
+    for _ in range(tries):
+        try:
+            v = f()
+            if ok(v):
+                return v
+            last = f"predicate false: {v!r}"
+        except Exception as e:
+            last = e
+        time.sleep(delay)
+    raise RuntimeError(f"chain state not visible after {tries*delay}s: {last}")
+
+
+def auction_bid(aid: int, amount: int):
+    _, spki, _, resolved, _, _ = _retry_call(lambda: auction_c.functions.get(aid).call())
+    if resolved:
+        raise RuntimeError("auction already resolved")
+    ct = _ecies_encrypt(bytes(spki), str(amount).encode())
+    rcpt = send_tx(auction_c.functions.bid, aid, json.dumps(ct).encode())
+    return {"tx": rcpt.transactionHash.hex(), "ciphertext": ct["ct_hex"]}
+
+
+def auction_resolve(aid: int, n_expected=None):
+    wid, _, n, resolved, _, _ = _retry_call(
+        lambda: auction_c.functions.get(aid).call(),
+        ok=lambda g: g[2] >= (n_expected or 2))
+    if resolved:
+        raise RuntimeError("already resolved")
+    cts = [json.loads(bytes(_retry_call(lambda i=i: auction_c.functions.getBid(aid, i).call())))
+           for i in range(n)]
+    inp = json.dumps({"phase": "resolve", "bids_ct": cts})
+    record = loader_run(AUCTION_JS.read_text(), inp, AUCTION_NONCE)
+    out = json.loads(record["output"])
+    rcpt = send_tx(auction_c.functions.resolve, aid, out["winner"], out["price"],
+                   json.dumps(record).encode())
+    return {"winner": out["winner"], "price": out["price"], "n_bids": n,
+            "tx": rcpt.transactionHash.hex()}
+
+
+def auction_verify(aid: int):
+    import hashlib as h
+    wid, spki, n, resolved, winner, price = _retry_call(
+        lambda: auction_c.functions.get(aid).call(), ok=lambda g: g[3])
+    record = json.loads(bytes(_retry_call(
+        lambda: auction_c.functions.getRecord(aid).call(), ok=lambda b: len(b) > 0)))
+    js = AUCTION_JS.read_text()
+    out = json.loads(record["output"])
+    rec_input = json.loads(record["input"])
+    chain_cts = [json.loads(bytes(auction_c.functions.getBid(aid, i).call()))["ct_hex"]
+                 for i in range(n)]
+    SCRATCH.mkdir(exist_ok=True)
+    (SCRATCH / "av_w.js").write_text(js)
+    (SCRATCH / "av_rec.json").write_text(json.dumps(
+        {k: v for k, v in record.items() if k != "chain_pem"}))
+    (SCRATCH / "av_chain.pem").write_text(record["chain_pem"])
+    r = subprocess.run(
+        ["python3", str(LOADER / "verifier/verify_workload.py"), str(SCRATCH / "av_chain.pem"),
+         str(SCRATCH / "av_w.js"), "--nonce", record["nonce"],
+         "--record", str(SCRATCH / "av_rec.json")], capture_output=True, text=True)
+    return {
+        "resolved": True,
+        "workloadId_matches_sha256_of_js": h.sha256(js.encode()).hexdigest() == wid.hex(),
+        "record_key_matches_announced_key": _leaf_spki(record["chain_pem"]) == bytes(spki),
+        "transcript_input_is_exactly_the_onchain_ciphertexts":
+            [c["ct_hex"] for c in rec_input["bids_ct"]] == chain_cts,
+        "output_matches_onchain_result": out["winner"] == winner and out["price"] == price,
+        "winner": winner, "price": price, "n_bids": n,
+        "hidden": "all bid amounts (including the winner's) — only index+price revealed",
+        "transcript_report": r.stdout + r.stderr,
+    }
+
+
 # ── taskboard ─────────────────────────────────────────────────────────────────
 
 def task_list():
@@ -343,6 +478,14 @@ class Handler(SimpleHTTPRequestHandler):
                 return self._json(task_run(int(body["id"])))
             if self.path == "/api/task/verify":
                 return self._json(task_verify(int(body["id"])))
+            if self.path == "/api/auction/create":
+                return self._json(auction_create())
+            if self.path == "/api/auction/bid":
+                return self._json(auction_bid(int(body["id"]), int(body["amount"])))
+            if self.path == "/api/auction/resolve":
+                return self._json(auction_resolve(int(body["id"]), body.get("n")))
+            if self.path == "/api/auction/verify":
+                return self._json(auction_verify(int(body["id"])))
             self.send_error(404)
         except Exception as e:
             self._json({"error": f"{type(e).__name__}: {e}"}, 500)

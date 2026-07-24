@@ -85,6 +85,23 @@ print(JSON.stringify({sum: inp.nums.reduce((a,b)=>a+b,0), count: inp.nums.length
   <div id="taskout" class="out" style="display:none"></div>
 </div>
 
+<h2>3 · Sealed-bid auction — the payload app is code, the bids stay sealed</h2>
+<div class="panel">
+  <p>The whole auction rule set is <span class="mono">auction.js</span> (identity =
+  its sha256). Bids are ECIES-encrypted to the workload's attested StrongBox key and
+  posted on-chain; the phone resolves in the measured loader and publishes <b>only the
+  winner index and the clearing (second) price</b>. All bid amounts stay sealed forever
+  — on-chain and in the signed transcript.</p>
+  <div style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+    <button id="aucreate">1 · Announce auction</button>
+    <input id="aubids" type="text" value="7, 42, 35" style="width:130px" title="bid amounts">
+    <button id="aubid" class="alt">2 · Place sealed bids</button>
+    <button id="auresolve">3 · Resolve on phone</button>
+    <button id="auverify" class="alt">4 · Verify from chain</button>
+  </div>
+  <div id="auout" class="out"></div>
+</div>
+
 <script type="module">
 import { ethers } from "https://esm.sh/ethers@6.13.0";
 
@@ -219,6 +236,55 @@ async function verifyTask(id) {
     return `  ${k} = ${good ? '<span class="ok">' : bad ? '<span class="badc">' : ""}${esc(v)}${good || bad ? "</span>" : ""}`;
   }).join("\n");
 }
+
+let auctionId = null;
+const au = $("auout");
+const auLog = s => { au.innerHTML += s + "\n"; };
+
+$("aucreate").onclick = async () => {
+  au.innerHTML = "announce: running auction.js on the phone (mints attested workload key)…\n";
+  const r = await post("/api/auction/create");
+  if (r.error) { auLog(`<span class="badc">${esc(r.error)}</span>`); return; }
+  auctionId = r.auction_id;
+  auLog(`auction #${r.auction_id} created  tx ${r.tx}`);
+  auLog(`  workloadId (sha256 of auction.js) = ${r.workloadId}`);
+  auLog(`  attested bid-encryption key       = ${r.announce_key_spki.slice(0, 40)}…`);
+  auLog(`  rules: ${esc(r.rules)}`);
+};
+
+$("aubid").onclick = async () => {
+  if (auctionId === null) { auLog('<span class="badc">create an auction first</span>'); return; }
+  const amounts = $("aubids").value.split(",").map(s => parseInt(s.trim())).filter(n => !isNaN(n));
+  for (const [i, a] of amounts.entries()) {
+    auLog(`bidder ${i}: encrypting bid to the workload key, posting on-chain…`);
+    const r = await post("/api/auction/bid", { id: auctionId, amount: a });
+    auLog(r.error ? `<span class="badc">${esc(r.error)}</span>`
+                  : `  sealed  ct ${r.ciphertext.slice(0, 32)}…  tx ${r.tx.slice(0, 18)}…`);
+  }
+  auLog("bid amounts now exist ONLY as ciphertext on Base Sepolia.");
+};
+
+$("auresolve").onclick = async () => {
+  if (auctionId === null) { auLog('<span class="badc">create an auction first</span>'); return; }
+  auLog("resolve: phone pulls ciphertexts, decrypts inside the loader, runs auction.js…");
+  const n = $("aubids").value.split(",").filter(s => s.trim()).length;
+  const r = await post("/api/auction/resolve", { id: auctionId, n });
+  if (r.error) { auLog(`<span class="badc">${esc(r.error)}</span>`); return; }
+  auLog(`<span class="ok">winner = bidder ${r.winner}, pays ${r.price} (second price)</span>  tx ${r.tx}`);
+  auLog(`  (${r.n_bids} bids; no bid value, including the winner's, was revealed)`);
+};
+
+$("auverify").onclick = async () => {
+  if (auctionId === null) { auLog('<span class="badc">create an auction first</span>'); return; }
+  auLog("verify: everything below is recomputed from chain data + the JS text…");
+  const r = await post("/api/auction/verify", { id: auctionId });
+  if (r.error) { auLog(`<span class="badc">${esc(r.error)}</span>`); return; }
+  for (const k of ["workloadId_matches_sha256_of_js", "record_key_matches_announced_key",
+                   "transcript_input_is_exactly_the_onchain_ciphertexts", "output_matches_onchain_result"])
+    auLog(`  ${r[k] ? '<span class="ok">✔</span>' : '<span class="badc">✘</span>'} ${k}`);
+  auLog(`  hidden: ${esc(r.hidden)}`);
+  auLog(`<details><summary>transcript / attestation report</summary>${esc(r.transcript_report)}</details>`);
+};
 
 refreshTasks();
 </script>
