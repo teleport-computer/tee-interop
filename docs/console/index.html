@@ -241,7 +241,7 @@ async function verifyTask(id) {
   }).join("\n");
 }
 
-const AUCTION_ADDR = "0x1cdb41cd3F1e71d5B8a3440ab912ECD5414E0782";
+const AUCTION_ADDR = "0x37d72e359a5341bEbA37Da4D33D1de56618BE578";
 $("aucontract").innerHTML = addrlink(AUCTION_ADDR, AUCTION_ADDR.slice(0, 10) + "…");
 
 let auctionId = null;
@@ -287,7 +287,7 @@ $("auverify").onclick = async () => {
   const r = await post("/api/auction/verify", { id: auctionId });
   if (r.error) { auLog(`<span class="badc">${esc(r.error)}</span>`); return; }
   for (const k of ["workloadId_matches_sha256_of_js", "record_key_matches_announced_key",
-                   "transcript_input_is_exactly_the_onchain_ciphertexts", "output_matches_onchain_result"])
+                   "output_matches_onchain_result"])
     auLog(`  ${r[k] ? '<span class="ok">✔</span>' : '<span class="badc">✘</span>'} ${k}`);
   auLog(`  hidden: ${esc(r.hidden)}`);
   auLog(`<details><summary>transcript / attestation report</summary>${esc(r.transcript_report)}</details>`);

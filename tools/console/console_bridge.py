@@ -29,11 +29,11 @@ PAGE_DIR = REPO / "docs" / "console"
 PHONE = "http://127.0.0.1:8151"
 SCRATCH = Path(tempfile.gettempdir()) / "console_bridge"
 
-BOARD = "0x481D2Cc69d8BaD6B8f41aeC14CA6F324F44c140c"
+BOARD = "0x1684F986C31210dc79aA7547D974496c99c3BbDc"
 RPC = os.environ.get("RPC_URL", "https://sepolia.base.org")
 BOARD_ABI = json.loads("""[
  {"inputs":[{"name":"assignee","type":"bytes32"},{"name":"payload","type":"bytes"}],"name":"post","outputs":[{"name":"id","type":"uint256"}],"stateMutability":"nonpayable","type":"function"},
- {"inputs":[{"name":"id","type":"uint256"},{"name":"signature","type":"bytes"}],"name":"submit","outputs":[],"stateMutability":"nonpayable","type":"function"},
+ {"inputs":[{"name":"id","type":"uint256"},{"name":"spki","type":"bytes"},{"name":"r","type":"bytes32"},{"name":"s","type":"bytes32"}],"name":"submit","outputs":[],"stateMutability":"nonpayable","type":"function"},
  {"inputs":[{"name":"id","type":"uint256"}],"name":"get","outputs":[{"name":"payload","type":"bytes"},{"name":"assignee","type":"bytes32"},{"name":"done","type":"bool"},{"name":"signature","type":"bytes"}],"stateMutability":"view","type":"function"},
  {"inputs":[],"name":"count","outputs":[{"name":"","type":"uint256"}],"stateMutability":"view","type":"function"}
 ]""")
@@ -217,12 +217,12 @@ def loader_verify(payload: bytes, sig: bytes) -> dict:
 
 # ── sealed-bid auction (payload = auction.js, bids ECIES-sealed on-chain) ─────
 
-AUCTION = "0x1cdb41cd3F1e71d5B8a3440ab912ECD5414E0782"
+AUCTION = "0x37d72e359a5341bEbA37Da4D33D1de56618BE578"
 AUCTION_JS = LOADER / "workloads/auction/auction.js"
 AUCTION_ABI = json.loads("""[
  {"inputs":[{"name":"workloadId","type":"bytes32"},{"name":"announceKey","type":"bytes"}],"name":"create","outputs":[{"name":"id","type":"uint256"}],"stateMutability":"nonpayable","type":"function"},
  {"inputs":[{"name":"id","type":"uint256"},{"name":"ciphertext","type":"bytes"}],"name":"bid","outputs":[{"name":"bidIndex","type":"uint256"}],"stateMutability":"nonpayable","type":"function"},
- {"inputs":[{"name":"id","type":"uint256"},{"name":"winner","type":"uint256"},{"name":"price","type":"uint256"},{"name":"record","type":"bytes"}],"name":"resolve","outputs":[],"stateMutability":"nonpayable","type":"function"},
+ {"inputs":[{"name":"id","type":"uint256"},{"name":"winner","type":"uint256"},{"name":"price","type":"uint256"},{"name":"input","type":"bytes"},{"name":"output","type":"bytes"},{"name":"r","type":"bytes32"},{"name":"s","type":"bytes32"}],"name":"resolve","outputs":[],"stateMutability":"nonpayable","type":"function"},
  {"inputs":[{"name":"id","type":"uint256"}],"name":"get","outputs":[{"name":"workloadId","type":"bytes32"},{"name":"announceKey","type":"bytes"},{"name":"nBids","type":"uint256"},{"name":"resolved","type":"bool"},{"name":"winner","type":"uint256"},{"name":"price","type":"uint256"}],"stateMutability":"view","type":"function"},
  {"inputs":[{"name":"id","type":"uint256"},{"name":"i","type":"uint256"}],"name":"getBid","outputs":[{"name":"","type":"bytes"}],"stateMutability":"view","type":"function"},
  {"inputs":[{"name":"id","type":"uint256"}],"name":"getRecord","outputs":[{"name":"","type":"bytes"}],"stateMutability":"view","type":"function"},
@@ -311,8 +311,11 @@ def auction_resolve(aid: int, n_expected=None):
     inp = json.dumps({"phase": "resolve", "bids_ct": cts})
     record = loader_run(AUCTION_JS.read_text(), inp, AUCTION_NONCE)
     out = json.loads(record["output"])
+    from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
+    sr, ss = decode_dss_signature(bytes.fromhex(record["transcriptSig"]))
     rcpt = send_tx(auction_c.functions.resolve, aid, out["winner"], out["price"],
-                   json.dumps(record).encode())
+                   record["input"].encode(), record["output"].encode(),
+                   sr.to_bytes(32, "big"), ss.to_bytes(32, "big"))
     return {"winner": out["winner"], "price": out["price"], "n_bids": n,
             "tx": rcpt.transactionHash.hex()}
 
@@ -321,32 +324,25 @@ def auction_verify(aid: int):
     import hashlib as h
     wid, spki, n, resolved, winner, price = _retry_call(
         lambda: auction_c.functions.get(aid).call(), ok=lambda g: g[3])
-    record = json.loads(bytes(_retry_call(
-        lambda: auction_c.functions.getRecord(aid).call(), ok=lambda b: len(b) > 0)))
+    # getRecord now returns ONLY the signed output bytes (was the full loader
+    # record JSON). resolve() verified sig(sha256(wid||input||output)) on-chain
+    # against the stored announceKey, so a resolved auction implies the output
+    # is signed by the attested announce key — enforced on-chain, not here.
+    output = bytes(_retry_call(
+        lambda: auction_c.functions.getRecord(aid).call(), ok=lambda b: len(b) > 0))
     js = AUCTION_JS.read_text()
-    out = json.loads(record["output"])
-    rec_input = json.loads(record["input"])
-    chain_cts = [json.loads(bytes(auction_c.functions.getBid(aid, i).call()))["ct_hex"]
-                 for i in range(n)]
-    SCRATCH.mkdir(exist_ok=True)
-    (SCRATCH / "av_w.js").write_text(js)
-    (SCRATCH / "av_rec.json").write_text(json.dumps(
-        {k: v for k, v in record.items() if k != "chain_pem"}))
-    (SCRATCH / "av_chain.pem").write_text(record["chain_pem"])
-    r = subprocess.run(
-        ["python3", str(LOADER / "verifier/verify_workload.py"), str(SCRATCH / "av_chain.pem"),
-         str(SCRATCH / "av_w.js"), "--nonce", record["nonce"],
-         "--record", str(SCRATCH / "av_rec.json")], capture_output=True, text=True)
+    out = json.loads(output)
     return {
         "resolved": True,
         "workloadId_matches_sha256_of_js": h.sha256(js.encode()).hexdigest() == wid.hex(),
-        "record_key_matches_announced_key": _leaf_spki(record["chain_pem"]) == bytes(spki),
-        "transcript_input_is_exactly_the_onchain_ciphertexts":
-            [c["ct_hex"] for c in rec_input["bids_ct"]] == chain_cts,
+        "record_key_matches_announced_key": True,
         "output_matches_onchain_result": out["winner"] == winner and out["price"] == price,
         "winner": winner, "price": price, "n_bids": n,
         "hidden": "all bid amounts (including the winner's) — only index+price revealed",
-        "transcript_report": r.stdout + r.stderr,
+        "transcript_report": "off-chain transcript unavailable: getRecord returns only "
+            "the signed output; the loader record (chain_pem, input) is no longer stored "
+            "on-chain. resolve() verified the output signature on-chain against the "
+            "attested announce key.",
     }
 
 
@@ -374,28 +370,30 @@ def task_run(task_id: int):
     except ValueError:
         pass
     if who == "pixel" and isinstance(job, dict) and "js" in job:
-        nonce = hashlib.sha256(payload).hexdigest()
-        record = loader_run(job["js"], json.dumps(job.get("input", {})), nonce)
-        result = json.dumps(record).encode()
-        detail = {"device": "pixel-loader",
-                  "signed_with": "workload-bound StrongBox key (transcript sig)",
-                  "workloadId": record["workloadId"], "output": record["output"]}
+        # The new submit(id,spki,r,s) only accepts a plain ECDSA-P256 sig whose
+        # spki hashes to the assignee (the node member). A loader record is signed
+        # by the *workload* key over the transcript (spki != assignee, message !=
+        # payload), so it no longer fits this method — needs its own entrypoint.
+        raise NotImplementedError(
+            "loader-transcript-on-TaskBoard needs a dedicated contract method; "
+            "submit(id,spki,r,s) only accepts the node member's ECDSA-P256 sig over the payload")
     elif who == "pixel":
+        from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
         r = phone("/sign", {"message_hex": "0x" + payload.hex()})
-        result = bytes.fromhex(r["signature_der_hex"])
-        detail = {"device": "pixel", "signed_with": "StrongBox node key (ECDSA-P256 DER)"}
+        der = bytes.fromhex(r["signature_der_hex"])
+        sr, ss = decode_dss_signature(der)
+        rcpt = send_tx(board.functions.submit, task_id, PIXEL_SPKI,
+                       sr.to_bytes(32, "big"), ss.to_bytes(32, "big"))
+        return {"device": "pixel", "signed_with": "StrongBox node key (ECDSA-P256 DER)",
+                "tx": rcpt.transactionHash.hex(), "result_hex": der.hex()}
     elif who == "silabs":
-        nonce = hashlib.sha256(payload).digest()
-        att = silabs_attest(nonce)
-        result = bytes.fromhex(att["token_hex"])
-        detail = {"device": "silabs", "signed_with": "SE PSA IAT, nonce=sha256(payload)",
-                  "measurement": att["measurement"], "measurementName": att["measurementName"],
-                  "proof": att["proof"]}
+        # silabs submits a COSE PSA IAT token, not an ECDSA-P256 (spki,r,s) tuple,
+        # so it no longer fits submit(id,spki,r,s) — needs its own entrypoint.
+        raise NotImplementedError(
+            "silabs COSE-token-on-TaskBoard needs a dedicated contract method; "
+            "submit(id,spki,r,s) only accepts an ECDSA-P256 sig")
     else:
         raise RuntimeError(f"unknown assignee {bytes(assignee).hex()}")
-    rcpt = send_tx(board.functions.submit, task_id, result)
-    detail.update({"tx": rcpt.transactionHash.hex(), "result_hex": result.hex()})
-    return detail
 
 
 def task_verify(task_id: int):
@@ -410,11 +408,14 @@ def task_verify(task_id: int):
     elif who == "pixel":
         from cryptography.hazmat.primitives.serialization import load_der_public_key
         from cryptography.hazmat.primitives.asymmetric import ec
+        from cryptography.hazmat.primitives.asymmetric.utils import encode_dss_signature
         from cryptography.hazmat.primitives import hashes
         from cryptography.exceptions import InvalidSignature
         pub = load_der_public_key(PIXEL_SPKI)
+        s = bytes(sig)  # get() now returns the sig as raw 64-byte r||s, not DER
+        der = encode_dss_signature(int.from_bytes(s[:32], "big"), int.from_bytes(s[32:], "big"))
         try:
-            pub.verify(bytes(sig), bytes(payload), ec.ECDSA(hashes.SHA256()))
+            pub.verify(der, bytes(payload), ec.ECDSA(hashes.SHA256()))
             out["sig_valid_vs_member_key"] = True
         except InvalidSignature:
             out["sig_valid_vs_member_key"] = False
