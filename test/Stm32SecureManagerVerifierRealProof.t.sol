@@ -13,7 +13,8 @@ import {P256Verifier} from "./vendor/P256Verifier.sol";
 
 /// Live STM32H573 Secure Manager attestation, pulled 2026-08-23 from the
 /// STM32H573I-DK after provisioning Secure Manager 2.1.0 / SMuRoT 2.0.0 and
-/// progressing PRODUCT_STATE to Closed (PSA lifecycle 0x3000 SECURED).
+/// progressing PRODUCT_STATE to Closed (PSA lifecycle 0x3000 SECURED). The
+/// challenge is host-supplied, so this token is fresh, not a fixed constant.
 ///
 /// Unlike the SiLabs adapter, this test exercises the FULL chain in-EVM: the DUA
 /// initial-attestation leaf is verified against the pinned ST CA key, and the EAT
@@ -36,15 +37,16 @@ contract Stm32SecureManagerVerifierRealProofTest is Test {
     bytes32 constant LEAF_R = 0x02d3e69a66a4dbf437ed4d241a5a3d7be3962d16542dc38e309a957f165753ab;
     bytes32 constant LEAF_S = 0xda99c02992de40a4d440eaa23731addaa47f5732436196dd4f995738d4b5f4ad;
 
-    bytes32 constant EAT_DIGEST = 0x046ddb0c7324e6a65a2de544cb05c85266cf88c3946ae6f4b8b0e502538327eb;
-    bytes32 constant EAT_R = 0xc0139f0828d05bf7f32eb9b14d9422133a3e9cf266616bef33d48d5135b5b3d3;
-    bytes32 constant EAT_S = 0x1bf5f5af3740e45425fe13ec3cc11cb0625d360158b983dfef6bf5c3403f2062;
+    bytes32 constant EAT_DIGEST = 0x1f574fd531f6da8b54e359d772b5ef8a68a3fdf09dca729225a095f15af556a0;
+    bytes32 constant EAT_R = 0x7221367f1fb6f35b3ae1662c1a0372585d06a912a9357cd2eb44ea2a411e1ad9;
+    bytes32 constant EAT_S = 0x7b06e9be3d1d46e2486ec5884885e2f6e25bdae1858637c985549a0ee8acdaa4;
 
     // -75006 NSPE: SHA-256 of our own non-secure application, measured by SMuRoT.
     // Reproducible offline from build output — see edge-tee host/nspe_measurement.py.
-    bytes32 constant MEASUREMENT = 0x0effd5249cc2e3d18c2e8b52b6b2502f727893b6e1392330d4457ad5574b070f;
-    // SMAK_Appli uses a fixed AuthChallenge; production firmware must take a host nonce.
-    bytes constant NONCE = hex"0000000000000000000000000000000000000000000000000000000000000000";
+    bytes32 constant MEASUREMENT = 0x92a7e9ee73c8465e707b3c21fc1c0b09fb605319216a358279ede807f485e071;
+    // Host-supplied challenge: the firmware reads 32 random bytes over the console
+    // before signing, so the token is fresh rather than a replayable constant.
+    bytes constant NONCE = hex"07ca9f122b1882939e63ac253bb07ec939f5118a3daa4b0d4743d396b4a48339";
     uint32 constant LIFECYCLE_SECURED = 0x3000;
     uint32 constant LIFECYCLE_DEBUG = 0x4000;
 
