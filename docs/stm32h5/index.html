@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>STM32H573 · on-chain attestation</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--bg:#ffffff;--panel:#f7f8fa;--border:#e3e6ea;--text:#1b1f24;--dim:#5b626b;--accent:#0a7d3f;--accent-bg:#e8f5ec;--warn:#9a6700;--warn-bg:#fff5e0;--bad:#b42318;--link:#0a59c2}
+*{box-sizing:border-box}
+body{margin:0;padding:32px 20px;background:var(--bg);color:var(--text);
+  font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+  max-width:760px;margin-inline:auto}
+h1{font-size:23px;line-height:1.3;margin:0 0 6px;font-weight:680;letter-spacing:-.01em}
+h2{font-size:12px;margin:32px 0 10px;color:var(--dim);text-transform:uppercase;letter-spacing:.07em;font-weight:680}
+.sub{color:var(--dim);margin:0 0 24px;font-size:16px}
+p{margin:0 0 12px}
+.panel{background:var(--panel);border:1px solid var(--border);border-radius:10px;padding:18px;margin-bottom:14px}
+.row{display:flex;gap:12px;align-items:baseline;padding:4px 0;border-bottom:1px solid var(--border)}
+.row:last-child{border-bottom:none}
+.row .k{color:var(--dim);min-width:150px;flex-shrink:0;font-size:13px}
+.row .v{color:var(--text);word-break:break-all}
+a{color:var(--link);text-decoration:none}a:hover{text-decoration:underline}
+code,.mono{font-family:ui-monospace,"SF Mono",Menlo,Consolas,monospace;font-size:.92em}
+code{color:#0b5b2e;background:var(--accent-bg);padding:1px 5px;border-radius:4px}
+.pill{display:inline-block;padding:2px 9px;border-radius:999px;background:var(--accent-bg);color:var(--accent);font-size:11px;font-weight:700;letter-spacing:.02em}
+.pill.warn{background:var(--warn-bg);color:var(--warn)}
+.dim{color:var(--dim)}
+button{font:inherit;font-weight:600;background:var(--accent);color:#fff;border:none;border-radius:7px;padding:11px 18px;cursor:pointer}
+button:hover{background:#096b36}button:disabled{opacity:.5;cursor:default}
+.chain{display:flex;flex-wrap:wrap;gap:7px;align-items:center;margin:4px 0}
+.chain .node{background:#fff;border:1px solid var(--border);border-radius:7px;padding:8px 11px;font-size:12.5px}
+.chain .arr{color:var(--dim)}
+.out{font-family:ui-monospace,Menlo,monospace;white-space:pre-wrap;background:#fff;border:1px solid var(--border);border-radius:8px;padding:13px;margin-top:12px;font-size:12.5px;min-height:20px;line-height:1.55}
+.ok{color:var(--accent);font-weight:600}.warnc{color:var(--warn)}.badc{color:var(--bad)}
+small{color:var(--dim)}
+hr{border:none;border-top:1px solid var(--border);margin:28px 0}
+.hero{margin:8px 0 24px;border-radius:14px;overflow:hidden;border:1px solid var(--border);background:linear-gradient(135deg,#f3f6fb,#eef2f7);box-shadow:0 10px 34px rgba(20,30,55,.10)}
+.hero img{width:100%;display:block}
+.hero .cap{padding:10px 15px;font-size:12.5px;color:var(--dim);border-top:1px solid var(--border);background:#fff}
+</style>
+</head>
+<body>
+
+<h1>An STM32 that proves which code it runs — with an anchor its vendor never published</h1>
+<p class="sub">Live attestation from a real <b>STM32H573</b> under ST's closed Secure Manager, verified in your browser against a contract on Base Sepolia.</p>
+
+<div class="panel">
+<p>This is an <b>STM32H573I-DK</b> running <b>STM32Trustee Secure Manager</b> — ST's closed secure
+firmware, at PSA isolation level&nbsp;3. The initial-attestation key lives inside it. You hold the
+application signing key but are locked out of the secure domain entirely: <b>you can boot code, but
+you cannot forge its measurement.</b></p>
+<p>At boot, ST's immutable <code>SMuRoT</code> stage measures your non-secure application and Secure
+Manager signs a <b>PSA attestation token</b> (IETF EAT, COSE_Sign1 / ES256) carrying that SHA-256 as
+the <code>NSPE</code> software component. So the token says: <i>“I am this specific ST die, and this
+is the hash of the application I booted.”</i></p>
+</div>
+
+<h2>The catch — and how it was closed</h2>
+<div class="panel">
+<p>Silicon Labs publishes its device root openly. <b>ST does not.</b> UM3254 Rev&nbsp;8 §11.1.1 says
+the initial-attestation CA certificate is “delivered under license and must be requested from
+STMicroelectronics.” Buying the (free) Secure Manager package does not include it — its
+<code>Utilities/Certificates/</code> ships exactly one PEM, the *user* root. Without an anchor, a
+verifier can check the chain's internal consistency and still have nothing to root it in.</p>
+<p>The anchor was <b>determined</b> instead of obtained. A P-256 signature plus its message pins the
+signer to two candidates. One die gives two candidates that both “work” by construction — circular.
+Intersecting two <i>independent</i> leaves leaves exactly one key:</p>
+<div class="chain">
+<span class="node">our die<br><small class="mono">…1005c2</small></span><span class="arr">∩</span>
+<span class="node">ST's own manual<br><small class="mono">UM3254 Rev 8 Fig 7 · …014b28</small></span><span class="arr">=</span>
+<span class="node">one key<br><small class="mono">04e2a0ed…bbcebae0</small></span>
+</div>
+<p style="margin:10px 0 0"><small>Both halves are externally reproducible: the user manual is a free
+download, and the silicon is purchasable. <b>The intersection self-validates</b> — one wrong byte
+changes the digest, changes the recovered candidates, and the sets go disjoint. Positive control:
+the same machinery run against the DUA <i>user</i> leaf recovers ST's published user root exactly.</small></p>
+</div>
+
+<h2>The identity chain — verified <i>on-chain</i>, both hops</h2>
+<div class="panel">
+<div class="chain">
+<span class="node">EAT<br><small class="mono">COSE_Sign1 / ES256</small></span><span class="arr">←</span>
+<span class="node">device IAK<br><small class="mono">in Secure Manager</small></span><span class="arr">←</span>
+<span class="node">DUA init-attest leaf<br><small class="mono">…1005c2</small></span><span class="arr">←</span>
+<span class="node">ST CA 01<br><small class="mono">determined anchor</small></span>
+</div>
+<p style="margin:10px 0 0"><small>The STM32 chain is only <b>depth 2</b> — the leaf is signed directly
+by a self-signed CA — so the entire path to the root fits in two RIP-7212 calls. The verifier does
+both: one proves the IAK was certified by ST, the other proves the token came from that IAK.
+<b>No off-chain chain walk is trusted.</b> (The SiLabs adapter, at depth 4, has to pin a fingerprint
+and delegate the walk off-chain; this is the variant its own docs describe as future work.)</small></p>
+</div>
+
+<h2>What the chip actually signed</h2>
+<div class="panel">
+<div class="row"><div class="k">part</div><div class="v">STM32H573I-DK · Secure Manager 2.1.0 · SMuRoT 2.0.0</div></div>
+<div class="row"><div class="k">code measurement</div><div class="v"><code>0x92a7e9ee…f485e071</code> <span class="dim">(claim ‑75006 <code>NSPE</code>: SHA‑256 of the application)</span></div></div>
+<div class="row"><div class="k">lifecycle</div><div class="v"><code>0x3000</code> SECURED <span class="dim">— PRODUCT_STATE Closed; the verifier rejects anything less</span></div></div>
+<div class="row"><div class="k">challenge</div><div class="v"><code>0x07ca9f12…b4a48339</code> <span class="dim">— host-supplied, so the token is fresh, not a replayable constant</span></div></div>
+<div class="row"><div class="k">device key</div><div class="v"><code>0x04c8522e…04968</code></div></div>
+</div>
+
+<h2>The measurement really follows the code</h2>
+<div class="panel">
+<p>Not an assertion — a demonstration. Adding host-nonce support changed the application, and the
+attested measurement moved with it:</p>
+<div class="row"><div class="k">old app</div><div class="v mono">0effd5249cc2e3d1…4b070f</div></div>
+<div class="row"><div class="k">new app</div><div class="v mono">92a7e9ee73c8465e…485e071</div></div>
+<p style="margin:12px 0 0"><small>The verifier <b>rejected</b> the stale value. And the new one is
+reproducible offline from build output alone —
+<code>SHA256(header ‖ app.bin ‖ zero-pad ‖ protected_tlvs)</code>, the region MCUboot signs — which
+independently agrees with the image's own <code>IMAGE_TLV_SHA256</code>. So a third party can compute
+what <i>should</i> be attested and compare it with what <i>was</i>.</small></p>
+</div>
+
+<h2>Verify it yourself — right now, in your browser</h2>
+<div class="panel">
+<p>The button sends the chip's real attestation proof to <b>Stm32SecureManagerVerifier</b> on Base
+Sepolia as a read-only call. The contract runs two true secp256r1 checks on Base's native RIP-7212
+precompile, confirms the ST CA key is pinned, enforces the SECURED lifecycle, and returns the
+attested identity. No wallet, no gas.</p>
+<button id="verifyBtn">▶ verify STM32H573 attestation on-chain</button>
+<div class="out dim" id="verifyOut">idle</div>
+<p style="margin:11px 0 0"><small>Contract: <a id="verifierLink" target="_blank" rel="noopener" class="mono"></a></small></p>
+</div>
+
+<h2>Three vendors, one registry — and it is any-to-any</h2>
+<div class="panel">
+<p>The H573 shares a <b>TEEBridge</b> with a Silicon Labs SiMG301 and a Phala dstack TDX confidential
+VM: two edge microcontrollers from different silicon vendors, and a datacenter enclave, each proven
+by its own verifier module.</p>
+<div class="out dim" id="bridgeOut">loading members…</div>
+<p style="margin:11px 0 0"><small><code>onboard(fromMemberId, toMemberId, payload)</code> takes
+<i>any</i> two members — nothing is wired pairwise. Verification factors per <b>vendor</b>, not per
+<b>pair</b>: N platforms need N modules, not N² bridges, because every module reduces its vendor's
+native evidence to the same <code>(codeId, pubkey, userData)</code> triple. Three is how many parts
+have had hardware bring-up, not a limit of the design.</small></p>
+</div>
+
+<h2>What this proves — and what it doesn't</h2>
+<div class="panel">
+<p><span class="pill">proven</span> An ST-held key, inside firmware the operator cannot enter, signed
+a fresh token carrying the SHA-256 of the operator's own application; the whole chain to a pinned
+anchor verifies inside a public contract; the device is a live registry member.</p>
+<p style="margin-top:14px"><span class="pill warn">anchor is determined</span> ST hands out a signed
+CA <i>certificate</i>; we hold a <i>public key</i> pinned by intersection. That is all a verifier
+needs, and it is reproducible from public material — but it is not the same artifact as a published
+root, and whether it may be relied on commercially is a question for counsel.</p>
+<p style="margin-bottom:0"><small>Trust model: you trust STMicroelectronics as the silicon
+manufacturer. You do <b>not</b> trust the operator, a cloud, or any server — the check runs in a
+public contract.</small></p>
+</div>
+
+<hr>
+<p><small>Bring-up, the verifier and the interop write-up live in
+<a href="https://github.com/teleport-computer/tee-interop" target="_blank" rel="noopener">the tee-interop repo</a>
+(<code>contracts/Stm32SecureManagerVerifier.sol</code>, <code>tools/stm32h5/build_proof.py</code>,
+<code>INTEROP-three-vendor.md</code>). Token, certificates and measurements captured from real silicon.</small></p>
+
+<script type="module">
+import { JsonRpcProvider, Contract } from "https://esm.sh/ethers@6.13.0";
+
+const RPC = "https://sepolia.base.org";
+const H5_VERIFIER = "0x1a95113805166A856c2C78290f268BFCbBEa8128";
+const BRIDGE = "0x31F8e4cf395dcffc6596AE31885FD1E73d6932fa";
+const H5_MEMBER     = "0x597b34c97bba368044847a3db34f544d914bac0af2292af85c1ad6ef1007f63a";
+const SILABS_MEMBER = "0x4af324d332bb7844d16c9aac396245414edb1d477fae21d900bfc8df203b1718";
+const DSTACK_MEMBER = "0x63ca256008edd395c03f57e4086c0417e19e19bf2ba7cab218e112b2c6b37307";
+const EXPECTED_CODE = "0x92a7e9ee73c8465e707b3c21fc1c0b09fb605319216a358279ede807f485e071";
+const PROOF = "0x0000000000000000000000000000000000000000000000000000000000000020000000000000000000000000000000000000000000000000000000000000012000000000000000000000000000000000000000000000000000000000000001a0f2b89f64bdbf52e525cb789a627bae86ce681da980606fee271207bd4bdb3c1800000000000000000000000000000000000000000000000000000000000002201f574fd531f6da8b54e359d772b5ef8a68a3fdf09dca729225a095f15af556a0000000000000000000000000000000000000000000000000000000000000028092a7e9ee73c8465e707b3c21fc1c0b09fb605319216a358279ede807f485e07100000000000000000000000000000000000000000000000000000000000002e00000000000000000000000000000000000000000000000000000000000003000000000000000000000000000000000000000000000000000000000000000004104e2a0eda50a72a00249d658c8c147f2d8204ec4d83ed5b304a5d71e861e2ddc961b3015abaa48096df0f2fea52af6566acb9d4355d3b0694dfe38e152bbcebae000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004104c8522e9e7a08df6885035fdd30099cdfbdf9ac34f10477ac8ca5681360549c9f7d25798ea48ed25c8e1a337a4b4690e0cacae276bdd3eb76c6ae8d214120496800000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000004002d3e69a66a4dbf437ed4d241a5a3d7be3962d16542dc38e309a957f165753abda99c02992de40a4d440eaa23731addaa47f5732436196dd4f995738d4b5f4ad00000000000000000000000000000000000000000000000000000000000000407221367f1fb6f35b3ae1662c1a0372585d06a912a9357cd2eb44ea2a411e1ad97b06e9be3d1d46e2486ec5884885e2f6e25bdae1858637c985549a0ee8acdaa4000000000000000000000000000000000000000000000000000000000000002007ca9f122b1882939e63ac253bb07ec939f5118a3daa4b0d4743d396b4a48339";
+
+const VERIFIER_ABI = ["function verify(bytes) view returns (bytes32 codeId, bytes pubkey, bytes userData)"];
+const BRIDGE_ABI = [
+  "function isMember(bytes32) view returns (bool)",
+  "function getMember(bytes32) view returns (bytes32 codeId, address verifier, bytes pubkey, bytes userData, uint256 registeredAt)"
+];
+
+const $ = (id) => document.getElementById(id);
+const provider = new JsonRpcProvider(RPC);
+const trunc = (s,h=12,t=10)=> !s||s.length<=h+t+3 ? s : s.slice(0,h)+"…"+s.slice(-t);
+
+$("verifierLink").textContent = H5_VERIFIER;
+$("verifierLink").href = `https://sepolia.basescan.org/address/${H5_VERIFIER}`;
+
+$("verifyBtn").onclick = async () => {
+  const out = $("verifyOut"); const btn = $("verifyBtn");
+  btn.disabled = true; out.className = "out dim";
+  out.textContent = "calling Stm32SecureManagerVerifier.verify(proof) on Base Sepolia…";
+  try {
+    const v = new Contract(H5_VERIFIER, VERIFIER_ABI, provider);
+    const [codeId, pubkey] = await v.verify(PROOF);
+    const match = codeId.toLowerCase() === EXPECTED_CODE.toLowerCase();
+    out.className = "out";
+    out.innerHTML =
+      `<span class="ok">✓ both signatures verified on-chain (native P-256 precompile)</span>\n` +
+      `  1. leaf  ← ST CA 01        <span class="dim">the IAK was certified by ST</span>\n` +
+      `  2. token ← device IAK      <span class="dim">the token came from that die</span>\n\n` +
+      `codeId  = ${codeId}\n` +
+      `          ${match ? '<span class="ok">↑ SHA-256 of the application SMuRoT measured (NSPE)</span>' : '<span class="badc">↑ unexpected</span>'}\n` +
+      `device  = ${trunc(pubkey,14,12)}\n\n` +
+      `<span class="dim">An ST-held key attested this application's hash, and the whole chain to a\nreconstructed anchor just checked out in a public contract, from your browser.</span>`;
+  } catch (e) {
+    out.className = "out badc"; out.textContent = "error: " + (e.shortMessage || e.message || e);
+  } finally { btn.disabled = false; }
+};
+
+(async () => {
+  const out = $("bridgeOut");
+  try {
+    const b = new Contract(BRIDGE, BRIDGE_ABI, provider);
+    const ids = [H5_MEMBER, SILABS_MEMBER, DSTACK_MEMBER];
+    const names = ["STM32H573 — edge MCU (ST)", "SiLabs SiMG301 — edge MCU (Silicon Labs)", "dstack tee-daemon — Phala TDX CVM"];
+    const vias = ["Stm32SecureManagerVerifier", "SilabsVerifier", "DstackVerifier"];
+    const res = await Promise.all(ids.map(async id => [await b.isMember(id), await b.getMember(id)]));
+    out.className = "out";
+    out.innerHTML = res.map(([ok,m],i) =>
+      `<span class="${ok?'ok':'badc'}">${ok?'●':'○'} ${names[i]}</span>\n` +
+      `   code ${trunc(m[0])}  via ${vias[i]}`).join("\n") +
+      `\n\n<span class="dim">three hardware platforms, one registry, each its own verifier</span>`;
+  } catch (e) {
+    out.className = "out badc"; out.textContent = "error: " + (e.shortMessage || e.message || e);
+  }
+})();
+</script>
+</body>
+</html>

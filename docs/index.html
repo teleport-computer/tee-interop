@@ -184,6 +184,14 @@ verification runs in your browser against the public chain, observable and repro
 server of ours in the loop.</p>
 <div class="cards">
   <div class="card">
+    <h3>STM32H573 Secure Manager <span class="pill live">view call</span></h3>
+    <div class="meta">PSA EAT · COSE_Sign1 / P-256 · ST-held key</div>
+    <p>ST's closed Secure Manager signs the SHA-256 of your application with a key you cannot reach. Both
+    chain hops verify on-chain &mdash; and its trust anchor was reconstructed from ST's own manual, because
+    ST never published one.</p>
+    <a class="go" href="./stm32h5/">verify a real STM32H573 on-chain &rarr;</a>
+  </div>
+  <div class="card">
     <h3>Silicon Labs SiMG301 <span class="pill live">view call</span></h3>
     <div class="meta">PSA EAT · COSE_Sign1 / P-256 · factory-rooted</div>
     <p>A $40 Secure Vault microcontroller signs the SHA-256 of its own firmware. Verified on-chain with Base's
