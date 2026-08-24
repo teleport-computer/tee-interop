@@ -60,7 +60,7 @@ is the hash of the application I booted.”</i></p>
 <p>Silicon Labs publishes its device root openly. <b>ST does not.</b> UM3254 Rev&nbsp;8 §11.1.1 says
 the initial-attestation CA certificate is “delivered under license and must be requested from
 STMicroelectronics.” Buying the (free) Secure Manager package does not include it — its
-<code>Utilities/Certificates/</code> ships exactly one PEM, the *user* root. Without an anchor, a
+<code>Utilities/Certificates/</code> ships exactly one PEM, the <i>user</i> root. Without an anchor, a
 verifier can check the chain's internal consistency and still have nothing to root it in.</p>
 <p>The anchor was <b>determined</b> instead of obtained. A P-256 signature plus its message pins the
 signer to two candidates. One die gives two candidates that both “work” by construction — circular.
@@ -74,6 +74,19 @@ Intersecting two <i>independent</i> leaves leaves exactly one key:</p>
 download, and the silicon is purchasable. <b>The intersection self-validates</b> — one wrong byte
 changes the digest, changes the recovered candidates, and the sets go disjoint. Positive control:
 the same machinery run against the DUA <i>user</i> leaf recovers ST's published user root exactly.</small></p>
+</div>
+
+<div class="panel" style="border-left:3px solid var(--warn)">
+<p style="margin:0"><b>ST has already published enough to determine its own gated anchor.</b> Two
+independent leaves are what pin the key — and ST has printed <i>two</i>: Figure&nbsp;7 of UM3254 (die
+<code>…014b28</code>) and Figure&nbsp;60 of the Secure Manager wiki page (die <code>…10111c</code>).
+Those are different dies, both in public documentation, and together they are sufficient. No silicon
+is needed in principle.</p>
+<p style="margin:11px 0 0"><small>We used our own die as the second sample only for a mechanical
+reason: the wiki figure is a 658&times;458 raster, too coarse to transcribe its base64 byte-exactly
+(it parses with the right issuer and the stated 470-byte length, but <code>r</code> comes out
+off-curve). Nothing is being kept secret here — an anchor delivered “under license” is recoverable
+from the vendor's own manuals, and licensing a public key was never going to keep it private.</small></p>
 </div>
 
 <h2>The identity chain — verified <i>on-chain</i>, both hops</h2>
